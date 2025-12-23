@@ -1,119 +1,388 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom' // We need this for navigation
+import { Link } from 'react-router-dom'
+import { motion, AnimatePresence } from 'framer-motion'
+import { LogOut, Plus, Users, Book, Search, Filter, Calendar } from 'lucide-react'
 import { supabase } from './supabaseClient'
+import SearchMovies from './SearchMovies'
+import MovieCard from './MovieCard'
+
+const GENRES = ['Action', 'Comedy', 'Drama', 'Fantasy', 'Horror', 'Romance', 'Sci-Fi', 'Thriller', 'Family']
 
 export default function Dashboard({ session }) {
   const [groups, setGroups] = useState([])
+  const [watchlist, setWatchlist] = useState([])
+  const [activeTab, setActiveTab] = useState('groups') 
+  const [showSearch, setShowSearch] = useState(false)
+  const [showCreateGroup, setShowCreateGroup] = useState(false) // New Modal
   const [newGroupName, setNewGroupName] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [showJoinGroup, setShowJoinGroup] = useState(false)
+  const [joinCode, setJoinCode] = useState('')
+  const [events, setEvents] = useState([])
+  const [groupMemberPreview, setGroupMemberPreview] = useState({})
+  const [showNominate, setShowNominate] = useState(false)
+  const [nominateMovie, setNominateMovie] = useState(null)
   
-  // FIX: Get the username from metadata instead of the email
-  const username = session.user.user_metadata.username || session.user.email
+  // Watchlist Local Search
+  const [watchFilter, setWatchFilter] = useState('')
+  const [showWatchFilters, setShowWatchFilters] = useState(false)
+  const [watchGenre, setWatchGenre] = useState('')
+  const [watchMinScore, setWatchMinScore] = useState(70)
+  const [useWatchScore, setUseWatchScore] = useState(false)
+
+  const username = session.user.user_metadata.username
 
   useEffect(() => {
     getMyGroups()
+    getMyWatchlist()
   }, [])
 
   async function getMyGroups() {
-    // This query asks: "Give me all groups that I am a member of"
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('group_members')
-      .select(`
-        group:groups (
-          id, name, share_code
-        )
-      `)
+      .select('group:groups (id, name, share_code), profiles(username)')
       .eq('user_id', session.user.id)
+    if (data) {
+      const groupList = data.map(item => item.group)
+      setGroups(groupList)
+      if (groupList.length > 0) {
+        getMyEvents(groupList.map(g => g.id))
+        getGroupMemberPreview(groupList.map(g => g.id))
+      } else {
+        setEvents([])
+      }
+    }
+  }
 
-    if (error) console.error(error)
-    else setGroups(data.map(item => item.group)) // Flatten the structure
+  async function getGroupMemberPreview(groupIds) {
+    const { data } = await supabase
+      .from('group_members')
+      .select('group_id, profiles(username)')
+      .in('group_id', groupIds)
+    if (!data) return
+    const grouped = {}
+    data.forEach(item => {
+      const name = item.profiles?.username
+      if (!grouped[item.group_id]) grouped[item.group_id] = []
+      if (name && grouped[item.group_id].length < 3) grouped[item.group_id].push(name)
+    })
+    setGroupMemberPreview(grouped)
+  }
+
+  async function getMyEvents(groupIds) {
+    const { data } = await supabase
+      .from('events')
+      .select('id, title, event_date, group_id')
+      .in('group_id', groupIds)
+      .order('event_date', { ascending: true })
+    setEvents(data || [])
+  }
+
+  async function getMyWatchlist() {
+    const { data } = await supabase.from('user_wishlist').select('movie:movies (*)').eq('user_id', session.user.id)
+    if (data) setWatchlist(data.map(item => item.movie))
+  }
+
+  async function addToWatchlist(movie) {
+    // Check duplication
+    const exists = watchlist.find(m => m.id === movie.id)
+    if (exists) return alert("Already in your watchlist!")
+
+    const { error } = await supabase.from('user_wishlist').insert([{ user_id: session.user.id, movie_id: movie.id }])
+    if (!error) {
+      setWatchlist(prev => {
+        if (prev.find(m => m.id === movie.id)) return prev
+        return [movie, ...prev]
+      })
+      getMyWatchlist()
+    }
+  }
+
+  async function removeFromWatchlist(movie) {
+    const { error } = await supabase
+      .from('user_wishlist')
+      .delete()
+      .eq('user_id', session.user.id)
+      .eq('movie_id', movie.id)
+    if (!error) {
+      setWatchlist(prev => prev.filter(m => m.id !== movie.id))
+    }
+  }
+
+  async function nominateFromWatchlist(event) {
+    if (!nominateMovie) return
+    const { data: existing } = await supabase
+      .from('nominations')
+      .select('id')
+      .eq('event_id', event.id)
+      .eq('movie_id', nominateMovie.id)
+      .limit(1)
+    
+    if (existing && existing.length > 0) {
+      return alert('Already nominated for this event!')
+    }
+
+    const { error } = await supabase.from('nominations').insert([{
+      event_id: event.id,
+      movie_id: nominateMovie.id,
+      nominated_by: session.user.id,
+      nomination_type: 'streaming'
+    }])
+    
+    if (!error) {
+      setShowNominate(false)
+      setNominateMovie(null)
+    }
   }
 
   async function createGroup() {
     if (!newGroupName) return
-    setLoading(true)
-
-    // 1. Create the Group
-    // We generate a random share code instantly
     const shareCode = Math.random().toString(36).substring(2, 9)
-    const { data: groupData, error: groupError } = await supabase
-      .from('groups')
-      .insert([{ name: newGroupName, share_code: shareCode }])
-      .select()
-      .single()
+    const { data: group } = await supabase.from('groups').insert([{ name: newGroupName, share_code: shareCode }]).select().single()
+    
+    await supabase.from('group_members').insert([{ group_id: group.id, user_id: session.user.id }])
+    
+    setNewGroupName('')
+    setShowCreateGroup(false)
+    getMyGroups()
+  }
 
-    if (groupError) {
-      alert('Error creating group')
-      setLoading(false)
+  async function joinGroupByCode() {
+    const code = joinCode.trim()
+    if (!code) return
+    const { data: group, error } = await supabase
+      .from('groups')
+      .select('id, name')
+      .eq('share_code', code)
+      .single()
+    if (error || !group) return alert('Invalid crew code.')
+    const { error: joinError } = await supabase
+      .from('group_members')
+      .insert([{ group_id: group.id, user_id: session.user.id }])
+    if (joinError) {
+      if (joinError.code === '23505') {
+        alert(`You're already in ${group.name}.`)
+      } else {
+        alert('Error joining crew.')
+      }
       return
     }
-
-    // 2. Add ME to the group automatically
-    const { error: memberError } = await supabase
-      .from('group_members')
-      .insert([{ group_id: groupData.id, user_id: session.user.id }])
-
-    if (!memberError) {
-      setNewGroupName('')
-      getMyGroups() // Refresh the list
-    }
-    setLoading(false)
+    setJoinCode('')
+    setShowJoinGroup(false)
+    getMyGroups()
   }
 
-  const copyInviteLink = (shareCode) => {
-    // Creates a link like: https://your-site.com/join/abc1234
-    const url = `${window.location.origin}/join/${shareCode}`
-    navigator.clipboard.writeText(url)
-    alert('Invite link copied to clipboard! Send it to your friends.')
-  }
+  // Filter watchlist logic
+  const filteredWatchlist = watchlist.filter(m => {
+    const titlePass = m.title.toLowerCase().includes(watchFilter.toLowerCase())
+    const genrePass = !watchGenre || (m.genre && m.genre.includes(watchGenre))
+    const score = m.rt_score === null ? 100 : m.rt_score
+    const scorePass = !useWatchScore || score >= watchMinScore
+    return titlePass && genrePass && scorePass
+  })
+  const groupNameById = Object.fromEntries(groups.map(g => [g.id, g.name]))
 
   return (
-    <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
-        <h1>👋 Hi, {username}</h1>
-        <button onClick={() => supabase.auth.signOut()} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #ccc' }}>Sign Out</button>
-      </div>
-
-      {/* CREATE GROUP SECTION */}
-      <div style={{ background: '#f9f9f9', padding: '20px', borderRadius: '12px', marginBottom: '30px' }}>
-        <h3>Create a New Squad</h3>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <input 
-            placeholder="Group Name (e.g. Sunday Watchers)" 
-            value={newGroupName}
-            onChange={(e) => setNewGroupName(e.target.value)}
-            style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #ddd' }}
-          />
-          <button 
-            onClick={createGroup} 
-            disabled={loading}
-            style={{ padding: '10px 20px', background: 'black', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer' }}
-          >
-            {loading ? 'Creating...' : 'Create'}
-          </button>
+    <div style={{ paddingBottom: '40px' }}>
+      {/* HEADER */}
+      <div className="flex-between" style={{ marginBottom: '30px' }}>
+        <div>
+          <h1 style={{ fontSize: '1.8rem', fontWeight: '800', margin: 0 }}>
+            <span className="gradient-text">My Hub</span>
+          </h1>
+          <p className="text-sm">@{username}</p>
         </div>
+        {/* FIX: Logout button is now auto width */}
+        <button onClick={() => supabase.auth.signOut()} style={{ width: 'auto', background: 'rgba(255,255,255,0.1)', padding: '10px', borderRadius: '50%', color: 'white' }}>
+            <LogOut size={20} />
+        </button>
       </div>
 
-      {/* GROUPS LIST */}
-      <h3>Your Groups</h3>
-      {groups.length === 0 ? <p style={{color: '#888'}}>You aren't in any groups yet.</p> : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-          {groups.map(group => (
-            <div key={group.id} style={{ border: '1px solid #eee', padding: '20px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>
-              <div>
-                <h3 style={{ margin: '0 0 5px 0' }}>{group.name}</h3>
-                <Link to={`/group/${group.id}`} style={{ color: '#4da6ff', textDecoration: 'none', fontWeight: 'bold' }}>View Events →</Link>
+      {/* TABS */}
+      <div style={{ display: 'flex', background: 'rgba(0,0,0,0.3)', padding: '4px', borderRadius: '16px', marginBottom: '24px' }}>
+        <button onClick={() => setActiveTab('groups')} style={{ flex: 1, padding: '12px', borderRadius: '12px', background: activeTab === 'groups' ? 'rgba(255,255,255,0.1)' : 'transparent', color: activeTab === 'groups' ? 'white' : '#888', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+            <Users size={18} /> Crews
+        </button>
+        <button onClick={() => setActiveTab('events')} style={{ flex: 1, padding: '12px', borderRadius: '12px', background: activeTab === 'events' ? 'rgba(255,255,255,0.1)' : 'transparent', color: activeTab === 'events' ? 'white' : '#888', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+            <Calendar size={18} /> Events
+        </button>
+        <button onClick={() => setActiveTab('watchlist')} style={{ flex: 1, padding: '12px', borderRadius: '12px', background: activeTab === 'watchlist' ? 'rgba(255,255,255,0.1)' : 'transparent', color: activeTab === 'watchlist' ? 'white' : '#888', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+            <Book size={18} /> Watchlist
+        </button>
+      </div>
+
+      <AnimatePresence mode="wait">
+        {activeTab === 'groups' ? (
+          <motion.div key="groups" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
+             
+             {/* NEW CREW BUTTON */}
+             <button onClick={() => setShowCreateGroup(!showCreateGroup)} style={{ width: '100%', marginBottom: '15px', background: 'var(--primary)', color: 'white', padding: '12px', borderRadius: '12px' }}>
+                {showCreateGroup ? 'Cancel' : '+ Start New Crew'}
+             </button>
+
+             {showCreateGroup && (
+                <div className="glass-panel" style={{ marginBottom: '20px' }}>
+                    <input autoFocus placeholder="Crew Name (e.g. Action Buffs)" value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)} />
+                    <button onClick={createGroup} style={{ marginTop: '10px', background: '#00E5FF', color: 'black' }}>Create</button>
+                </div>
+             )}
+
+             {/* JOIN CREW BUTTON */}
+             <button onClick={() => setShowJoinGroup(!showJoinGroup)} style={{ width: '100%', marginBottom: '15px', background: 'rgba(255,255,255,0.08)', color: 'white', padding: '12px', borderRadius: '12px' }}>
+                {showJoinGroup ? 'Cancel' : '+ Join a Crew'}
+             </button>
+
+             {showJoinGroup && (
+                <div className="glass-panel" style={{ marginBottom: '20px' }}>
+                    <input placeholder="Enter invite code" value={joinCode} onChange={(e) => setJoinCode(e.target.value)} />
+                    <button onClick={joinGroupByCode} style={{ marginTop: '10px', background: '#00E5FF', color: 'black' }}>Join</button>
+                </div>
+             )}
+
+             {groups.map(g => (
+               <Link key={g.id} to={`/group/${g.id}`} style={{ textDecoration: 'none' }}>
+                 <div className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px', marginBottom: '12px' }}>
+                    <div>
+                      <div style={{ fontWeight: '600', fontSize: '1.1rem', color: 'white' }}>{g.name}</div>
+                      <div className="text-sm">
+                        {groupMemberPreview[g.id]?.length
+                          ? `${groupMemberPreview[g.id].join(', ')}${groupMemberPreview[g.id].length === 3 ? '...' : ''}`
+                          : 'No members yet'}
+                      </div>
+                    </div>
+                    <span style={{ color: 'var(--text-muted)' }}>→</span>
+                 </div>
+               </Link>
+             ))}
+          </motion.div>
+        ) : activeTab === 'events' ? (
+          <motion.div key="events" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
+            {events.length === 0 ? (
+              <p className="text-sm" style={{ textAlign: 'center' }}>No upcoming events yet.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {events.map(event => (
+                  <Link key={event.id} to={`/room/${event.id}`} style={{ textDecoration: 'none' }}>
+                    <div className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px' }}>
+                      <div>
+                        <div style={{ fontWeight: 700, color: 'white' }}>{event.title}</div>
+                        <div className="text-sm">
+                          {groupNameById[event.group_id] || 'Crew'} • {event.event_date ? new Date(event.event_date).toLocaleDateString() : 'TBD'}
+                        </div>
+                      </div>
+                      <span style={{ color: 'var(--text-muted)' }}>→</span>
+                    </div>
+                  </Link>
+                ))}
               </div>
-              <button 
-                onClick={() => copyInviteLink(group.share_code)}
-                style={{ padding: '8px 12px', background: '#e0f7fa', color: '#006064', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem' }}
-              >
-                🔗 Copy Invite
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+            )}
+          </motion.div>
+        ) : (
+          <motion.div key="watchlist" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+              
+              {/* WATCHLIST ACTION BAR */}
+              <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+                  <div style={{ position: 'relative', flex: 1 }}>
+                      <Search size={16} style={{ position: 'absolute', left: 12, top: 14, color: '#888' }} />
+                      <input placeholder="Filter your list..." value={watchFilter} onChange={(e) => setWatchFilter(e.target.value)} style={{ paddingLeft: '35px' }} />
+                  </div>
+                  <button onClick={() => setShowWatchFilters(!showWatchFilters)} style={{ width: 'auto', background: 'rgba(255,255,255,0.08)', color: 'white', padding: '0 14px', borderRadius: '12px' }}>
+                    <Filter size={18} color={showWatchFilters ? '#00E5FF' : 'white'} />
+                  </button>
+                  <button onClick={() => setShowSearch(true)} style={{ width: 'auto', background: '#00E5FF', color: 'black', padding: '0 20px', borderRadius: '12px' }}>
+                    <Plus size={20} />
+                  </button>
+              </div>
+
+              {showWatchFilters && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px' }}>
+                  <div className="flex-gap" style={{ marginBottom: '10px' }}>
+                    <select value={watchGenre} onChange={(e) => setWatchGenre(e.target.value)} style={{ padding: '8px', fontSize: '0.85rem', flex: 1 }}>
+                      <option value="">All Genres</option>
+                      {GENRES.map(g => <option key={g} value={g}>{g}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex-between">
+                    <span className="text-sm">Min Score {watchMinScore}%</span>
+                    <input type="checkbox" checked={useWatchScore} onChange={(e) => setUseWatchScore(e.target.checked)} />
+                  </div>
+                  {useWatchScore && (
+                    <input type="range" value={watchMinScore} onChange={(e) => setWatchMinScore(Number(e.target.value))} />
+                  )}
+                </div>
+              )}
+
+              {filteredWatchlist.length === 0 && <p className="text-sm" style={{textAlign:'center'}}>No movies found.</p>}
+              
+              {filteredWatchlist.map(movie => (
+                  <MovieCard key={movie.id} movie={movie}>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <button
+                        onClick={() => { setNominateMovie(movie); setShowNominate(true) }}
+                        style={{ flex: 1, background: 'rgba(255,255,255,0.1)', color: 'white', padding: '10px', borderRadius: '12px' }}
+                      >
+                        Nominate
+                      </button>
+                      <button
+                        onClick={() => removeFromWatchlist(movie)}
+                        style={{ background: 'rgba(255,255,255,0.06)', color: '#ff7a7a', padding: '10px 12px', borderRadius: '12px' }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </MovieCard>
+              ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showSearch && <SearchMovies eventId={null} onClose={() => setShowSearch(false)} customAction={addToWatchlist} />}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showNominate && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(5px)' }}
+          >
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              style={{ width: '100%', maxWidth: '500px', height: '70vh', background: '#1a1a2e', borderTopLeftRadius: '24px', borderTopRightRadius: '24px', padding: '20px', display: 'flex', flexDirection: 'column' }}
+            >
+              <div className="flex-between" style={{ marginBottom: '20px' }}>
+                <h2 style={{ margin: 0 }}>Nominate to Event</h2>
+                <button onClick={() => { setShowNominate(false); setNominateMovie(null) }} style={{ background: '#333', padding: '8px', borderRadius: '50%', color: 'white' }}>X</button>
+              </div>
+
+              {events.length === 0 && (
+                <p className="text-sm" style={{ textAlign: 'center' }}>
+                  You're not in any events yet. Create one in a crew to nominate from your watchlist.
+                </p>
+              )}
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', overflowY: 'auto' }}>
+                {events.map(event => (
+                  <button
+                    key={event.id}
+                    onClick={() => nominateFromWatchlist(event)}
+                    style={{ background: 'rgba(255,255,255,0.08)', color: 'white', padding: '14px', borderRadius: '12px', textAlign: 'left' }}
+                  >
+                    <div style={{ fontWeight: '600' }}>{event.title}</div>
+                    <div className="text-sm">
+                      {groupNameById[event.group_id] || 'Crew'} • {event.event_date ? new Date(event.event_date).toLocaleDateString() : 'TBD'}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

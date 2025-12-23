@@ -1,160 +1,197 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { supabase } from './supabaseClient'
+import { AnimatePresence } from 'framer-motion'
+import { ThumbsUp, ThumbsDown, Heart, Plus, Trophy, MapPin, Calendar, Ticket, ChevronLeft } from 'lucide-react'
 import SearchMovies from './SearchMovies'
 import HostView from './HostView'
+import MovieCard from './MovieCard'
 
 export default function MovieRoom() {
-  const { code } = useParams()
+  const { code } = useParams() // This is the EVENT ID
+  const [event, setEvent] = useState(null)
+  const [loading, setLoading] = useState(true)
   const [nominatedMovies, setNominatedMovies] = useState([])
-  const [sessionId, setSessionId] = useState(null)
   const [myVotes, setMyVotes] = useState({}) 
   const [showSearch, setShowSearch] = useState(false)
   const [showHostView, setShowHostView] = useState(false)
-  const [isHost, setIsHost] = useState(false)
 
-  // 1. Load the Session when the page opens
   useEffect(() => {
-    getSession()
-  }, [code]) // Run whenever the 'code' changes
-
-  // 2. Load Nominations only AFTER we have a valid Session ID
-  useEffect(() => {
-    if (sessionId) {
-      getNominations()
+    if (code) {
+        loadData()
     }
-  }, [sessionId])
+  }, [code])
 
-  async function getSession() {
-    const { data, error } = await supabase
-      .from('sessions')
-      .select('*')
-      .eq('session_code', code)
-      .single()
-    
-    if (error || !data) {
-      console.error("Error loading session:", error)
-      return
-    }
+  async function loadData() {
+    setLoading(true)
+    // 1. Get Event Details
+    const { data: eventData, error } = await supabase.from('events').select('*').eq('id', code).single()
+    if (error) console.error("Event Error:", error)
+    setEvent(eventData)
 
-    setSessionId(data.id)
-    
-    // Check if I am the host
-    const myId = localStorage.getItem('movie_user_id')
-    if (data.host_user_id === myId) {
-      setIsHost(true)
+    // 2. Get Nominations
+    await refreshNominations()
+
+    // 3. Get My Votes
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+        const { data: votes } = await supabase
+            .from('votes')
+            .select('movie_id, vote_type')
+            .eq('event_id', code)
+            .eq('user_id', user.id)
+        
+        const voteMap = {}
+        votes?.forEach(v => voteMap[v.movie_id] = v.vote_type)
+        setMyVotes(voteMap)
     }
+    setLoading(false)
   }
 
-  async function getNominations() {
-    const { data, error } = await supabase
+  async function refreshNominations() {
+    const { data } = await supabase
       .from('nominations')
-      .select(`
-        id,
-        nominated_by,
-        movie:movies (
-          id, title, description, genre, rt_score
-        )
-      `)
-      .eq('session_id', sessionId)
-
-    if (error) {
-      console.error("Error loading nominations:", error)
-    } else {
-      setNominatedMovies(data || [])
-    }
+      .select('id, nominated_by, nomination_type, movie:movies (*)')
+      .eq('event_id', code)
+    setNominatedMovies(data || [])
   }
 
   const handleVote = async (movieId, voteValue) => {
-    // UI Update (Optimistic)
-    setMyVotes((prev) => ({ ...prev, [movieId]: voteValue }))
-
-    const userName = localStorage.getItem('movie_user_name')
+    setMyVotes((prev) => ({ ...prev, [movieId]: voteValue })) // Instant UI update
     
-    // Database Update
-    await supabase.from('votes').upsert([
-        { session_id: sessionId, movie_id: movieId, user_name: userName, vote_type: voteValue }
-      ], { onConflict: 'session_id, movie_id, user_name' })
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+        await supabase.from('votes').upsert([
+            { event_id: code, movie_id: movieId, user_id: user.id, vote_type: voteValue }
+        ], { onConflict: 'event_id, movie_id, user_id' })
+    }
   }
 
+  const handleAddNomination = async (movie, isTheater) => {
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    // Check if already nominated
+    const alreadyExists = nominatedMovies.find(n => n.movie.id === movie.id)
+    if (alreadyExists) return alert("Already nominated!")
+
+    const { error } = await supabase.from('nominations').insert([
+        { 
+          event_id: code, 
+          movie_id: movie.id, 
+          nominated_by: user.id,
+          nomination_type: isTheater ? 'theater' : 'streaming'
+        } 
+    ])
+    if (!error) refreshNominations()
+  }
+
+  // Location Fallback Logic
+  const openMaps = () => {
+    if (!event.location_address) return
+    const query = encodeURIComponent(event.location_address)
+    // Works for "Bryce's House" or "123 Main St"
+    window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank')
+  }
+
+  if (loading) return <div style={{padding:'40px', textAlign:'center'}}>Loading Event...</div>
+  if (!event) return <div style={{padding:'40px', textAlign:'center'}}>Event not found.</div>
+
   return (
-    <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto' }}>
-      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px'}}>
-        <h1>Room: {code}</h1>
-        <button 
-          onClick={() => setShowSearch(true)}
-          style={{ padding: '10px 15px', background: 'green', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer' }}
-        >
-          + Add Movie
-        </button>
+    <div style={{ paddingBottom: '40px' }}>
+      
+      {/* HEADER */}
+      <div style={{ marginBottom: '20px' }}>
+        <h1 style={{ fontSize: '2rem', margin: 0, lineHeight: 1.1 }}>{event.title}</h1>
+        
+        <div className="flex-gap" style={{ marginTop: '12px', color: '#ccc', fontSize: '0.9rem', flexWrap: 'wrap' }}>
+            {event.event_date && (
+                <span className="flex-gap" style={{background:'rgba(255,255,255,0.1)', padding:'5px 10px', borderRadius:'8px'}}>
+                    <Calendar size={16}/> {new Date(event.event_date).toLocaleDateString(undefined, {weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}
+                </span>
+            )}
+            {event.location_address && (
+                <span className="flex-gap maps-link" onClick={openMaps} style={{background:'rgba(0, 229, 255, 0.1)', color: '#00E5FF', padding:'5px 10px', borderRadius:'8px', cursor: 'pointer'}}>
+                    <MapPin size={16}/> {event.location_address}
+                </span>
+            )}
+        </div>
       </div>
 
-      {/* HOST BUTTON */}
-      {isHost && (
-        <div style={{marginBottom: '20px'}}>
-            <button 
-            onClick={() => setShowHostView(true)}
-            style={{ 
-                width: '100%',
-                padding: '12px', background: '#ffd700', color: 'black', 
-                border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' 
-            }}
-            >
-            👑 View Host Results
+      {/* ACTION BAR */}
+      <div className="flex-between" style={{ marginBottom: '20px' }}>
+        <span className="text-sm" style={{ fontWeight: 'bold', letterSpacing: '1px' }}>NOMINATIONS ({nominatedMovies.length})</span>
+        <div className="flex-gap">
+            <button onClick={() => setShowHostView(true)} style={{ background: '#ffd700', color: 'black', padding: '10px', borderRadius: '50%' }}>
+                <Trophy size={20} />
+            </button>
+            <button onClick={() => setShowSearch(true)} style={{ background: 'var(--primary)', color: 'white', padding: '10px 16px', borderRadius: '20px', display: 'flex', gap: '6px', alignItems: 'center' }}>
+                <Plus size={18} /> Add
             </button>
         </div>
+      </div>
+
+      {/* LIST */}
+      {nominatedMovies.length === 0 ? (
+        <div style={{ textAlign: 'center', marginTop: '60px', color: '#666' }}>
+          <Film size={48} style={{opacity:0.2, marginBottom:'10px'}}/>
+          <p>No nominations yet.</p>
+          <p className="text-sm">Be the first to suggest a movie!</p>
+        </div>
+      ) : (
+        nominatedMovies.map((item) => {
+          const currentVote = myVotes[item.movie.id]
+          const isTheater = item.nomination_type === 'theater'
+          
+          return (
+            <div key={item.id} className={isTheater ? 'theater-card' : ''} style={{ borderRadius: '16px', marginBottom: '16px' }}>
+                <MovieCard movie={item.movie} meta={
+                    isTheater ? <span style={{color: 'gold', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '5px'}}><Ticket size={14}/> THEATER TRIP</span> : null
+                }>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                        <VoteBtn active={currentVote === -2} type="down" onClick={() => handleVote(item.movie.id, -2)} />
+                        <VoteBtn active={currentVote === 1} type="up" onClick={() => handleVote(item.movie.id, 1)} />
+                        <VoteBtn active={currentVote === 2} type="love" onClick={() => handleVote(item.movie.id, 2)} />
+                    </div>
+                </MovieCard>
+            </div>
+          )
+        })
       )}
 
       {/* MODALS */}
-      {showHostView && <HostView sessionId={sessionId} onClose={() => setShowHostView(false)} />}
-      
-      {showSearch && (
-        <SearchMovies 
-          sessionId={sessionId} 
-          onClose={() => setShowSearch(false)} 
-          onNominate={() => getNominations()} 
-        />
-      )}
-
-      {/* MOVIE LIST */}
-      <div className="card-container">
-        {nominatedMovies.length === 0 ? (
-          <div style={{textAlign: 'center', marginTop: '40px', color: '#666'}}>
-            <p>No movies nominated yet!</p>
-            <p>Click <strong>+ Add Movie</strong> to start the list.</p>
-          </div>
-        ) : (
-          nominatedMovies.map((item) => {
-            const movie = item.movie
-            const currentVote = myVotes[movie.id]
-
-            return (
-              <div key={item.id} style={{ 
-                border: '1px solid #ddd', marginBottom: '15px', padding: '15px', borderRadius: '12px',
-                backgroundColor: currentVote === -2 ? '#fff5f5' : currentVote === 2 ? '#f0faff' : 'white',
-                boxShadow: '0 2px 5px rgba(0,0,0,0.05)'
-              }}>
-                 <div style={{display:'flex', justifyContent: 'space-between', alignItems: 'flex-start'}}>
-                    <h3 style={{marginTop: 0, marginBottom: '5px'}}>{movie.title}</h3>
-                    <span style={{fontSize: '0.75rem', background: '#f0f0f0', padding: '3px 8px', borderRadius: '10px', color: '#555'}}>
-                      {item.nominated_by}
-                    </span>
-                 </div>
-                 <p style={{fontSize: '0.9em', color: '#666', margin: '5px 0 10px 0'}}>{movie.description}</p>
-                 <div style={{fontSize: '0.85rem', marginBottom: '15px', fontWeight: 'bold', color: '#d32f2f'}}>
-                    🍅 {movie.rt_score}%
-                 </div>
-                 
-                 <div style={{ display: 'flex', gap: '10px' }}>
-                   <button onClick={() => handleVote(movie.id, -2)} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #ddd', background: currentVote === -2 ? '#ffcccc' : 'white', cursor: 'pointer' }}>👎</button>
-                   <button onClick={() => handleVote(movie.id, 1)} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #ddd', background: currentVote === 1 ? '#cce5ff' : 'white', cursor: 'pointer' }}>👍</button>
-                   <button onClick={() => handleVote(movie.id, 2)} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #ddd', background: currentVote === 2 ? '#ffccff' : 'white', cursor: 'pointer' }}>❤️</button>
-                 </div>
-              </div>
-            )
-          })
+      {showHostView && <HostView sessionId={code} onClose={() => setShowHostView(false)} />}
+      <AnimatePresence>
+        {showSearch && (
+            <SearchMovies 
+                eventId={code} // PASSING EVENT ID TO ENABLE "EVENT MODE"
+                onClose={() => setShowSearch(false)} 
+                onNominate={handleAddNomination}
+            />
         )}
-      </div>
+      </AnimatePresence>
     </div>
   )
+}
+
+// Sub-component for cleaner button code
+function VoteBtn({ active, type, onClick }) {
+    const colors = { down: 'var(--primary)', up: '#00E5FF', love: '#FF0055' }
+    const color = colors[type]
+    const icons = { down: ThumbsDown, up: ThumbsUp, love: Heart }
+    const Icon = icons[type]
+
+    return (
+        <button 
+            onClick={onClick} 
+            style={{ 
+                flex: 1, padding: '12px', borderRadius: '12px', 
+                background: active ? color : 'rgba(255,255,255,0.05)', 
+                color: active && type === 'up' ? 'black' : 'white',
+                opacity: active ? 1 : 0.4,
+                display: 'flex', justifyContent: 'center'
+            }}
+        >
+            <Icon size={20} fill={active && type === 'love' ? 'white' : 'none'} />
+        </button>
+    )
 }

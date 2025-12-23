@@ -4,7 +4,8 @@ import { supabase } from './supabaseClient'
 import Auth from './Auth'
 import Dashboard from './Dashboard'
 import JoinGroup from './JoinGroup'
-// import GroupView from './GroupView' // We will build this next!
+import GroupView from './GroupView' 
+import EventView from './EventView'
 
 function App() {
   const [session, setSession] = useState(null)
@@ -41,6 +42,8 @@ function App() {
         <Route path="/join/:shareCode" element={<JoinGroup session={session} />} />
         {/* Future Route: Group Details */}
         {/* <Route path="/group/:groupId" element={<GroupView session={session} />} /> */}
+        <Route path="/group/:groupId" element={<GroupView session={session} />} />
+        <Route path="/room/:code" element={<EventView />} />
       </Routes>
     </BrowserRouter>
   )

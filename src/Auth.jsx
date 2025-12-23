@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { motion } from 'framer-motion' // For smooth entrance
+import { User, Lock, Film, ArrowRight } from 'lucide-react' // Icons
 import { supabase } from './supabaseClient'
 
 export default function Auth() {
@@ -10,87 +12,125 @@ export default function Auth() {
   const handleAuth = async (e) => {
     e.preventDefault()
     setLoading(true)
-    
-    // THE TRICK: Automatically create a fake email based on the username
-    // We remove spaces and make it lowercase to avoid issues
+    // The ghost email trick
     const cleanUsername = username.trim().replace(/\s+/g, '').toLowerCase()
     const ghostEmail = `${cleanUsername}@movienight.com`
 
     let errorDetails = null
+    const { error } = isSignUp 
+      ? await supabase.auth.signUp({ email: ghostEmail, password, options: { data: { username } } })
+      : await supabase.auth.signInWithPassword({ email: ghostEmail, password })
 
-    if (isSignUp) {
-      // SIGN UP
-      const { error } = await supabase.auth.signUp({
-        email: ghostEmail,
-        password: password,
-        options: {
-          data: { username: username }, // Saves the "Real" display name
-        },
-      })
-      errorDetails = error
-    } else {
-      // LOG IN
-      const { error } = await supabase.auth.signInWithPassword({
-        email: ghostEmail,
-        password: password,
-      })
-      errorDetails = error
-    }
-
-    if (errorDetails) {
-      // If the error says "Invalid login credentials", we can say "Wrong password or username"
-      alert(errorDetails.message)
-    } 
+    if (error) alert(error.message.includes('Invalid login') ? 'Wrong username or password' : error.message)
     setLoading(false)
   }
 
+  // Animation variants for staggered entrance
+  const containerVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: { 
+      opacity: 1, 
+      y: 0, 
+      transition: { duration: 0.6, ease: [0.22, 1, 0.36, 1], staggerChildren: 0.1 } 
+    }
+  }
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: { opacity: 1, y: 0 }
+  }
+
   return (
-    <div style={{ maxWidth: '400px', margin: '50px auto', padding: '20px', textAlign: 'center', border: '1px solid #ccc', borderRadius: '12px', boxShadow: '0 4px 10px rgba(0,0,0,0.05)' }}>
-      <h1>🎬 {isSignUp ? 'Join the Crew' : 'Welcome Back'}</h1>
-      <p style={{color: '#666', marginBottom: '20px'}}>
-        {isSignUp ? 'Create a username to start voting.' : 'Enter your username to continue.'}
-      </p>
-
-      <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+    <div style={{ 
+      minHeight: '80vh', /* Center vertically on screen */
+      display: 'flex', 
+      flexDirection: 'column', 
+      justifyContent: 'center', 
+      alignItems: 'center' 
+    }}>
+      
+      <motion.div 
+        variants={containerVariants}
+        initial="hidden"
+        animate="visible"
+        style={{ width: '100%', maxWidth: '360px' }} /*Keep it slim */
+      >
         
-        <input
-          type="text"
-          placeholder="Username (e.g. MovieBuff99)"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          required
-          style={{ padding: '12px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '16px' }}
-        />
-        
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          style={{ padding: '12px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '16px' }}
-        />
+        {/* HEADER */}
+        <motion.div variants={itemVariants} style={{ textAlign: 'center', marginBottom: '40px' }}>
+          <Film size={48} className="gradient-text" style={{ marginBottom: '10px' }} />
+          <h1 style={{ fontSize: '2.5rem', fontWeight: '800', letterSpacing: '-1px', lineHeight: 1, margin: 0 }}>
+            <span className="gradient-text">Popcorn</span><br />
+            & Picks.
+          </h1>
+          <p style={{ color: 'var(--text-muted)', marginTop: '10px', fontSize: '1.1rem' }}>
+            {isSignUp ? 'Join the crew.' : 'Welcome back.'}
+          </p>
+        </motion.div>
 
-        <button 
-          type="submit" 
-          disabled={loading}
-          style={{ 
-            padding: '12px', background: 'black', color: 'white', 
-            border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px' 
-          }}
-        >
-          {loading ? 'Processing...' : isSignUp ? 'Create Account' : 'Log In'}
-        </button>
-      </form>
+        {/* FORM */}
+        <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+          
+          {/* Username Input with Icon */}
+          <motion.div variants={itemVariants} style={{ position: 'relative' }}>
+            <User size={20} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#666' }} />
+            <input
+              type="text"
+              placeholder="Username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              required
+              style={{ paddingLeft: '44px', background: 'rgba(255,255,255,0.05)', border: 'none' }} /* Subtle background */
+            />
+          </motion.div>
 
-      <div style={{ marginTop: '20px', fontSize: '0.9rem' }}>
-        <button 
-          onClick={() => setIsSignUp(!isSignUp)}
-          style={{ background: 'none', border: 'none', color: '#4da6ff', textDecoration: 'underline', cursor: 'pointer' }}
-        >
-          {isSignUp ? 'I already have an account' : 'New here? Create an account'}
-        </button>
-      </div>
+          {/* Password Input with Icon */}
+          <motion.div variants={itemVariants} style={{ position: 'relative' }}>
+            <Lock size={20} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#666' }} />
+            <input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              style={{ paddingLeft: '44px', background: 'rgba(255,255,255,0.05)', border: 'none' }}
+            />
+          </motion.div>
+
+          <motion.button 
+            variants={itemVariants}
+            type="submit" 
+            disabled={loading}
+            style={{ 
+              marginTop: '10px',
+              background: 'var(--primary)', /* Neon Pink accent */
+              color: 'white', padding: '16px', borderRadius: '14px', fontSize: '1.1rem',
+              display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px',
+              boxShadow: '0 4px 20px rgba(255, 0, 85, 0.3)' /* Subtle glow */
+            }}
+          >
+            {loading ? 'Processing...' : (
+              <>
+                {isSignUp ? 'Create Account' : 'Sign In'} <ArrowRight size={20} />
+              </>
+            )}
+          </motion.button>
+        </form>
+
+        {/* TOGGLE LINK */}
+        <motion.div variants={itemVariants} style={{ marginTop: '30px', textAlign: 'center' }}>
+          <button 
+            onClick={() => setIsSignUp(!isSignUp)}
+            style={{ background: 'none', color: 'var(--text-muted)', fontSize: '0.9rem' }}
+          >
+            {isSignUp ? 'Already have an account? ' : "Don't have an account? "}
+            <span style={{ color: 'var(--text)', fontWeight: '600', textDecoration: 'underline' }}>
+              {isSignUp ? 'Sign In' : 'Join Now'}
+            </span>
+          </button>
+        </motion.div>
+
+      </motion.div>
     </div>
   )
 }

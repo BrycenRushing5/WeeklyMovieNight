@@ -139,7 +139,7 @@ export default function GroupView({ session }) {
 
   return (
     <>
-    <div style={{ padding: '20px', paddingBottom: '80px' }}>
+    <div style={{ padding: '20px', paddingBottom: '80px', height: '100%', overflowY: 'auto' }}>
       {/* BACK BUTTON */}
       <button onClick={() => navigate('/')} style={{ background: 'none', color: '#888', padding: 0, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '5px' }}>
         <ChevronLeft size={20} /> Back to Dashboard

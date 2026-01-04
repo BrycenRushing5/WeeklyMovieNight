@@ -182,7 +182,7 @@ export default function Dashboard({ session }) {
   const groupNameById = Object.fromEntries(groups.map(g => [g.id, g.name]))
 
   return (
-    <div style={{ paddingBottom: '40px' }}>
+    <div style={{ paddingBottom: '40px', height: '100%', overflowY: 'auto' }}>
       {/* HEADER */}
       <div className="flex-between" style={{ marginBottom: '30px' }}>
         <div>

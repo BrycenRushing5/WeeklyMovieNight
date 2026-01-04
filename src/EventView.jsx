@@ -113,7 +113,7 @@ export default function EventView() {
   if (!event) return null
 
   return (
-    <div style={{ paddingBottom: '40px' }}>
+    <div style={{ paddingBottom: '40px', height: '100%', overflowY: 'auto' }}>
       
       {/* BACK NAVIGATION */}
       <button onClick={() => navigate(`/group/${event.group_id}`)} style={{ background: 'none', color: '#888', padding: 0, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '5px' }}>

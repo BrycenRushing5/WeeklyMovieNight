@@ -36,20 +36,31 @@ h1, h2, h3, h4, h5, h6 {
   cursor: pointer;
 }
 
+html, body {
+  height: 100%;
+}
+
 body {
   margin: 0;
   font-family: 'Inter', sans-serif;
   background: var(--bg-gradient);
   color: var(--text);
-  min-height: 100vh;
+  min-height: 100svh;
+  overflow: hidden;
   -webkit-font-smoothing: antialiased;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
 }
 
 #root {
   max-width: 500px; /* Tighter mobile width */
   margin: 0 auto;
   padding: 20px;
-  min-height: 100vh;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }

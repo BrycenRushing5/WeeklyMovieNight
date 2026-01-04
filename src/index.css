@@ -46,7 +46,6 @@ body {
   background: var(--bg-gradient);
   color: var(--text);
   min-height: 100svh;
-  overflow: hidden;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -60,7 +59,6 @@ body {
   padding: 20px;
   height: 100%;
   box-sizing: border-box;
-  overflow: hidden;
   display: flex;
   flex-direction: column;
 }

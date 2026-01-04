@@ -71,7 +71,8 @@ export default function GroupView({ session }) {
         event_date: newEventDate || null,
         location_address: newEventLocation || null,
         status: 'voting',
-        voting_method: 'hearts'
+        voting_method: 'hearts',
+        created_by: session.user.id
       }])
     
     if (!error) {

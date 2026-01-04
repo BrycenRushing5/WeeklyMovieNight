@@ -58,9 +58,6 @@ export default function Dashboard({ session }) {
     if (data) {
       const groupList = data.map(item => item.group)
       setGroups(groupList)
-      if (groupList.length > 0 && !selectedGroupId) {
-        setSelectedGroupId(groupList[0].id)
-      }
       if (groupList.length > 0) {
         getMyEvents(groupList.map(g => g.id))
         getGroupMemberPreview(groupList.map(g => g.id))
@@ -86,10 +83,15 @@ export default function Dashboard({ session }) {
   }
 
   async function getMyEvents(groupIds) {
+    const groupIdList = (groupIds || []).filter(Boolean)
+    const orFilters = [
+      groupIdList.length ? `group_id.in.(${groupIdList.join(',')})` : null,
+      `created_by.eq.${session.user.id}`
+    ].filter(Boolean).join(',')
     const { data } = await supabase
       .from('events')
       .select('id, title, event_date, group_id')
-      .in('group_id', groupIds)
+      .or(orFilters)
       .order('event_date', { ascending: true })
     setEvents(data || [])
   }
@@ -165,16 +167,16 @@ export default function Dashboard({ session }) {
 
   async function createEventFromDashboard() {
     if (!newEventTitle) return
-    if (!selectedGroupId) return alert('Pick a crew for this event.')
     const { data: createdEvent, error } = await supabase
       .from('events')
       .insert([{ 
-        group_id: selectedGroupId, 
+        group_id: selectedGroupId || null, 
         title: newEventTitle, 
         event_date: newEventDate || null,
         location_address: newEventLocation || null,
         status: 'voting',
-        voting_method: 'hearts'
+        voting_method: 'hearts',
+        created_by: session.user.id
       }])
       .select()
       .single()
@@ -187,6 +189,11 @@ export default function Dashboard({ session }) {
       if (group?.share_code && createdEvent?.id) {
         const inviteLink = `${window.location.origin}/join/${group.share_code}?eventId=${createdEvent.id}&addToGroup=1`
         setLastInviteLink(inviteLink)
+      } else if (createdEvent?.id) {
+        setLastInviteLink(`${window.location.origin}/room/${createdEvent.id}`)
+      }
+      if (createdEvent?.id) {
+        setEvents(prev => (prev.find(e => e.id === createdEvent.id) ? prev : [createdEvent, ...prev]))
       }
       getMyGroups()
     }
@@ -344,7 +351,7 @@ export default function Dashboard({ session }) {
               <div className="glass-panel" style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <input placeholder="Event Title (e.g. Friday Horror)" value={newEventTitle} onChange={(e) => setNewEventTitle(e.target.value)} autoFocus />
                 <select value={selectedGroupId} onChange={(e) => setSelectedGroupId(e.target.value)}>
-                  <option value="">Select a Crew</option>
+                  <option value="">No Crew (solo event)</option>
                   {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                 </select>
                 <button
@@ -373,11 +380,6 @@ export default function Dashboard({ session }) {
               </div>
             )}
 
-            {groups.length === 0 && (
-              <p className="text-sm" style={{ textAlign: 'center' }}>
-                Join or create a crew first to host events.
-              </p>
-            )}
             {events.length === 0 ? (
               <p className="text-sm" style={{ textAlign: 'center' }}>No upcoming events yet.</p>
             ) : (
@@ -388,7 +390,7 @@ export default function Dashboard({ session }) {
                       <div>
                         <div style={{ fontWeight: 700, color: 'white' }}>{event.title}</div>
                         <div className="text-sm">
-                          {groupNameById[event.group_id] || 'Crew'} • {event.event_date ? new Date(event.event_date).toLocaleDateString() : 'TBD'}
+                          {groupNameById[event.group_id] || 'No Crew'} • {event.event_date ? new Date(event.event_date).toLocaleDateString() : 'TBD'}
                         </div>
                       </div>
                       <span style={{ color: 'var(--text-muted)' }}>→</span>

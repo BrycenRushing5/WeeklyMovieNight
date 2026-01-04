@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { LogOut, Plus, Users, Book, Search, Filter, Calendar } from 'lucide-react'
+import { LogOut, Plus, Users, Book, Search, Filter, Calendar, Clock, Link as LinkIcon } from 'lucide-react'
 import { supabase } from './supabaseClient'
 import SearchMovies from './SearchMovies'
 import MovieCard from './MovieCard'
@@ -11,7 +11,7 @@ const GENRES = ['Action', 'Comedy', 'Drama', 'Fantasy', 'Horror', 'Romance', 'Sc
 export default function Dashboard({ session }) {
   const [groups, setGroups] = useState([])
   const [watchlist, setWatchlist] = useState([])
-  const [activeTab, setActiveTab] = useState('groups') 
+  const [activeTab, setActiveTab] = useState('events') 
   const [showSearch, setShowSearch] = useState(false)
   const [showCreateGroup, setShowCreateGroup] = useState(false) // New Modal
   const [newGroupName, setNewGroupName] = useState('')
@@ -21,6 +21,20 @@ export default function Dashboard({ session }) {
   const [groupMemberPreview, setGroupMemberPreview] = useState({})
   const [showNominate, setShowNominate] = useState(false)
   const [nominateMovie, setNominateMovie] = useState(null)
+  const [showCreateEvent, setShowCreateEvent] = useState(false)
+  const [newEventTitle, setNewEventTitle] = useState('')
+  const [newEventDate, setNewEventDate] = useState('')
+  const [newEventLocation, setNewEventLocation] = useState('')
+  const [selectedGroupId, setSelectedGroupId] = useState('')
+  const [showDateTimePicker, setShowDateTimePicker] = useState(false)
+  const [pickedDate, setPickedDate] = useState(null)
+  const [pickedTime, setPickedTime] = useState('')
+  const [displayMonth, setDisplayMonth] = useState(() => {
+    const now = new Date()
+    return new Date(now.getFullYear(), now.getMonth(), 1)
+  })
+  const [lastInviteLink, setLastInviteLink] = useState('')
+  const [inviteCopied, setInviteCopied] = useState(false)
   
   // Watchlist Local Search
   const [watchFilter, setWatchFilter] = useState('')
@@ -44,6 +58,9 @@ export default function Dashboard({ session }) {
     if (data) {
       const groupList = data.map(item => item.group)
       setGroups(groupList)
+      if (groupList.length > 0 && !selectedGroupId) {
+        setSelectedGroupId(groupList[0].id)
+      }
       if (groupList.length > 0) {
         getMyEvents(groupList.map(g => g.id))
         getGroupMemberPreview(groupList.map(g => g.id))
@@ -146,6 +163,69 @@ export default function Dashboard({ session }) {
     getMyGroups()
   }
 
+  async function createEventFromDashboard() {
+    if (!newEventTitle) return
+    if (!selectedGroupId) return alert('Pick a crew for this event.')
+    const { data: createdEvent, error } = await supabase
+      .from('events')
+      .insert([{ 
+        group_id: selectedGroupId, 
+        title: newEventTitle, 
+        event_date: newEventDate || null,
+        location_address: newEventLocation || null,
+        status: 'voting',
+        voting_method: 'hearts'
+      }])
+      .select()
+      .single()
+    if (!error) {
+      setNewEventTitle('')
+      setNewEventDate('')
+      setNewEventLocation('')
+      setShowCreateEvent(false)
+      const group = groups.find(g => g.id === selectedGroupId)
+      if (group?.share_code && createdEvent?.id) {
+        const inviteLink = `${window.location.origin}/join/${group.share_code}?eventId=${createdEvent.id}&addToGroup=1`
+        setLastInviteLink(inviteLink)
+      }
+      getMyGroups()
+    }
+  }
+
+  function formatDateTimeLabel(value) {
+    if (!value) return 'Pick date & time'
+    const d = new Date(value)
+    return d.toLocaleString([], { weekday: 'short', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+  }
+
+  function openDateTimePicker() {
+    const existing = newEventDate ? new Date(newEventDate) : null
+    const base = existing || new Date()
+    const roundedMinutes = Math.round(base.getMinutes() / 15) * 15
+    base.setMinutes(roundedMinutes)
+    base.setSeconds(0)
+    base.setMilliseconds(0)
+    setPickedDate(new Date(base.getFullYear(), base.getMonth(), base.getDate()))
+    setPickedTime(`${String(base.getHours()).padStart(2, '0')}:${String(base.getMinutes()).padStart(2, '0')}`)
+    setDisplayMonth(new Date(base.getFullYear(), base.getMonth(), 1))
+    setShowDateTimePicker(true)
+  }
+
+  function confirmDateTime() {
+    if (!pickedDate || !pickedTime) return
+    const [hh, mm] = pickedTime.split(':').map(Number)
+    const composed = new Date(pickedDate.getFullYear(), pickedDate.getMonth(), pickedDate.getDate(), hh, mm, 0, 0)
+    setNewEventDate(composed.toISOString())
+    setShowDateTimePicker(false)
+  }
+
+  function handleCopyInvite() {
+    if (!lastInviteLink) return
+    navigator.clipboard.writeText(lastInviteLink)
+    setInviteCopied(true)
+    setTimeout(() => setInviteCopied(false), 2000)
+  }
+
   async function joinGroupByCode() {
     const code = joinCode.trim()
     if (!code) return
@@ -199,11 +279,11 @@ export default function Dashboard({ session }) {
 
       {/* TABS */}
       <div style={{ display: 'flex', background: 'rgba(0,0,0,0.3)', padding: '4px', borderRadius: '16px', marginBottom: '24px' }}>
-        <button onClick={() => setActiveTab('groups')} style={{ flex: 1, padding: '12px', borderRadius: '12px', background: activeTab === 'groups' ? 'rgba(255,255,255,0.1)' : 'transparent', color: activeTab === 'groups' ? 'white' : '#888', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-            <Users size={18} /> Crews
-        </button>
         <button onClick={() => setActiveTab('events')} style={{ flex: 1, padding: '12px', borderRadius: '12px', background: activeTab === 'events' ? 'rgba(255,255,255,0.1)' : 'transparent', color: activeTab === 'events' ? 'white' : '#888', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
             <Calendar size={18} /> Events
+        </button>
+        <button onClick={() => setActiveTab('groups')} style={{ flex: 1, padding: '12px', borderRadius: '12px', background: activeTab === 'groups' ? 'rgba(255,255,255,0.1)' : 'transparent', color: activeTab === 'groups' ? 'white' : '#888', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+            <Users size={18} /> Crews
         </button>
         <button onClick={() => setActiveTab('watchlist')} style={{ flex: 1, padding: '12px', borderRadius: '12px', background: activeTab === 'watchlist' ? 'rgba(255,255,255,0.1)' : 'transparent', color: activeTab === 'watchlist' ? 'white' : '#888', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
             <Book size={18} /> Watchlist
@@ -256,6 +336,48 @@ export default function Dashboard({ session }) {
           </motion.div>
         ) : activeTab === 'events' ? (
           <motion.div key="events" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
+            <button onClick={() => setShowCreateEvent(!showCreateEvent)} style={{ width: '100%', marginBottom: '15px', background: 'var(--primary)', color: 'white', padding: '12px', borderRadius: '12px' }}>
+              {showCreateEvent ? 'Cancel' : '+ New Event'}
+            </button>
+
+            {showCreateEvent && (
+              <div className="glass-panel" style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <input placeholder="Event Title (e.g. Friday Horror)" value={newEventTitle} onChange={(e) => setNewEventTitle(e.target.value)} autoFocus />
+                <select value={selectedGroupId} onChange={(e) => setSelectedGroupId(e.target.value)}>
+                  <option value="">Select a Crew</option>
+                  {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+                <button
+                  onClick={openDateTimePicker}
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.08)', color: 'white', padding: '12px', borderRadius: '12px', justifyContent: 'center' }}
+                >
+                  <Calendar size={16} />
+                  <Clock size={16} />
+                  {formatDateTimeLabel(newEventDate)}
+                </button>
+                <input placeholder="Location" value={newEventLocation} onChange={(e) => setNewEventLocation(e.target.value)} />
+                <button onClick={createEventFromDashboard} style={{ marginTop: '10px', background: '#00E5FF', color: 'black' }}>Create Event</button>
+              </div>
+            )}
+
+            {lastInviteLink && (
+              <div className="glass-panel" style={{ marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700 }}>Invite Link Ready</div>
+                  <div className="text-sm">Share it to bring people into this event.</div>
+                </div>
+                <button onClick={handleCopyInvite} style={{ background: 'rgba(255,255,255,0.1)', color: 'white', padding: '10px 12px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <LinkIcon size={16} />
+                  {inviteCopied ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            )}
+
+            {groups.length === 0 && (
+              <p className="text-sm" style={{ textAlign: 'center' }}>
+                Join or create a crew first to host events.
+              </p>
+            )}
             {events.length === 0 ? (
               <p className="text-sm" style={{ textAlign: 'center' }}>No upcoming events yet.</p>
             ) : (
@@ -383,6 +505,144 @@ export default function Dashboard({ session }) {
           </motion.div>
         )}
       </AnimatePresence>
+      <DateTimePickerSheet
+        show={showDateTimePicker}
+        onClose={() => setShowDateTimePicker(false)}
+        displayMonth={displayMonth}
+        setDisplayMonth={setDisplayMonth}
+        pickedDate={pickedDate}
+        setPickedDate={setPickedDate}
+        pickedTime={pickedTime}
+        setPickedTime={setPickedTime}
+        onConfirm={confirmDateTime}
+      />
     </div>
   )
+}
+
+function DateTimePickerSheet({
+  show,
+  onClose,
+  displayMonth,
+  setDisplayMonth,
+  pickedDate,
+  setPickedDate,
+  pickedTime,
+  setPickedTime,
+  onConfirm
+}) {
+  if (!show) return null
+  const days = buildCalendarDays(displayMonth)
+  const monthLabel = displayMonth.toLocaleString([], { month: 'long', year: 'numeric' })
+  const timeSlots = getTimeSlots()
+  const today = new Date()
+  const isSameDay = (d1, d2) => d1 && d2 && d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate()
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(5px)' }}>
+      <div style={{ width: '100%', maxWidth: '500px', height: '80vh', background: '#1a1a2e', borderTopLeftRadius: '24px', borderTopRightRadius: '24px', padding: '20px', display: 'flex', flexDirection: 'column' }}>
+        <div className="flex-between" style={{ marginBottom: '12px' }}>
+          <h2 style={{ margin: 0 }}>Pick Date & Time</h2>
+          <button onClick={onClose} style={{ background: '#333', padding: '8px', borderRadius: '50%', color: 'white' }}>X</button>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+          <button
+            onClick={() => setDisplayMonth(new Date(displayMonth.getFullYear(), displayMonth.getMonth() - 1, 1))}
+            style={{ background: 'rgba(255,255,255,0.1)', color: 'white', padding: '6px 10px', borderRadius: '10px' }}
+          >
+            Prev
+          </button>
+          <div style={{ fontWeight: 700 }}>{monthLabel}</div>
+          <button
+            onClick={() => setDisplayMonth(new Date(displayMonth.getFullYear(), displayMonth.getMonth() + 1, 1))}
+            style={{ background: 'rgba(255,255,255,0.1)', color: 'white', padding: '6px 10px', borderRadius: '10px' }}
+          >
+            Next
+          </button>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px', marginBottom: '10px' }}>
+          {['S','M','T','W','T','F','S'].map(d => (
+            <div key={d} className="text-sm" style={{ textAlign: 'center' }}>{d}</div>
+          ))}
+          {days.map((day, idx) => {
+            if (!day) return <div key={`e-${idx}`} />
+            const dateObj = new Date(displayMonth.getFullYear(), displayMonth.getMonth(), day)
+            const selected = isSameDay(dateObj, pickedDate)
+            const isToday = isSameDay(dateObj, today)
+            return (
+              <button
+                key={`${displayMonth.getMonth()}-${day}`}
+                onClick={() => setPickedDate(dateObj)}
+                style={{
+                  padding: '8px 0',
+                  borderRadius: '10px',
+                  background: selected ? '#00E5FF' : 'rgba(255,255,255,0.08)',
+                  color: selected ? 'black' : 'white',
+                  border: isToday && !selected ? '1px solid #00E5FF' : 'none'
+                }}
+              >
+                {day}
+              </button>
+            )
+          })}
+        </div>
+
+        <div style={{ marginTop: '8px', marginBottom: '10px', fontWeight: 600 }}>Time</div>
+        <div style={{ flex: 1, overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+          {timeSlots.map(t => (
+            <button
+              key={t}
+              onClick={() => setPickedTime(t)}
+              style={{
+                padding: '10px 0',
+                borderRadius: '10px',
+                background: pickedTime === t ? '#00E5FF' : 'rgba(255,255,255,0.08)',
+                color: pickedTime === t ? 'black' : 'white',
+                fontWeight: 600
+              }}
+            >
+              {toDisplayTime(t)}
+            </button>
+          ))}
+        </div>
+
+        <button onClick={onConfirm} style={{ marginTop: '14px', background: 'var(--primary)', color: 'white', padding: '12px', borderRadius: '12px' }}>
+          Confirm Date & Time
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function getTimeSlots() {
+  const slots = []
+  for (let h = 0; h < 24; h++) {
+    for (let m = 0; m < 60; m += 15) {
+      const hh = String(h).padStart(2, '0')
+      const mm = String(m).padStart(2, '0')
+      slots.push(`${hh}:${mm}`)
+    }
+  }
+  return slots
+}
+
+function toDisplayTime(time) {
+  const [h, m] = time.split(':').map(Number)
+  const period = h >= 12 ? 'PM' : 'AM'
+  const hour12 = h % 12 || 12
+  return `${hour12}:${String(m).padStart(2, '0')} ${period}`
+}
+
+function buildCalendarDays(monthDate) {
+  const year = monthDate.getFullYear()
+  const month = monthDate.getMonth()
+  const firstDay = new Date(year, month, 1)
+  const startWeekday = firstDay.getDay()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const cells = []
+  for (let i = 0; i < startWeekday; i++) cells.push(null)
+  for (let day = 1; day <= daysInMonth; day++) cells.push(day)
+  return cells
 }

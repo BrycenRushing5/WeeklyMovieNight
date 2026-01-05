@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 import { AnimatePresence } from 'framer-motion'
-import { ThumbsUp, ThumbsDown, Heart, Plus, Trophy, MapPin, Calendar, Ticket, ChevronLeft, Film, Link as LinkIcon, Check } from 'lucide-react'
+import { ThumbsUp, ThumbsDown, Heart, Plus, Trophy, MapPin, Calendar, Ticket, ChevronLeft, Film, Link as LinkIcon, Check, Users } from 'lucide-react'
 import SearchMovies from './SearchMovies'
 import HostView from './HostView'
 import MovieCard from './MovieCard'
@@ -14,6 +14,10 @@ export default function EventView() {
   const [event, setEvent] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [userId, setUserId] = useState(null)
+  const [myGroups, setMyGroups] = useState([])
+  const [showAddCrew, setShowAddCrew] = useState(false)
+  const [selectedCrewId, setSelectedCrewId] = useState('')
   
   // Split Ballot States
   const [myNominations, setMyNominations] = useState([])
@@ -38,8 +42,12 @@ export default function EventView() {
       const { data: eventData, error: eventError } = await supabase.from('events').select('*').eq('id', code).single()
       if (eventError) throw eventError
       setEvent(eventData)
-      const { data: groupData } = await supabase.from('groups').select('share_code').eq('id', eventData.group_id).single()
-      setGroupShareCode(groupData?.share_code || '')
+      if (eventData.group_id) {
+        const { data: groupData } = await supabase.from('groups').select('share_code').eq('id', eventData.group_id).single()
+        setGroupShareCode(groupData?.share_code || '')
+      } else {
+        setGroupShareCode('')
+      }
 
       // 2. Get Nominations
       await refreshNominations()
@@ -47,10 +55,12 @@ export default function EventView() {
       // 3. Get Votes
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
+          setUserId(user.id)
           const { data: votes } = await supabase.from('votes').select('movie_id, vote_type').eq('event_id', code).eq('user_id', user.id)
           const voteMap = {}
           votes?.forEach(v => voteMap[v.movie_id] = v.vote_type)
           setMyVotes(voteMap)
+          fetchMyGroups(user.id)
       }
     } catch (err) {
       console.error(err)
@@ -67,6 +77,29 @@ export default function EventView() {
     if (data) {
         setMyNominations(data.filter(n => n.nominated_by === user.id))
         setCrewNominations(data.filter(n => n.nominated_by !== user.id))
+    }
+  }
+
+  async function fetchMyGroups(currentUserId) {
+    const { data } = await supabase
+      .from('group_members')
+      .select('group:groups (id, name)')
+      .eq('user_id', currentUserId)
+    if (data) setMyGroups(data.map(item => item.group))
+  }
+
+  async function handleAddCrew() {
+    if (!selectedCrewId) return
+    const { error } = await supabase
+      .from('events')
+      .update({ group_id: selectedCrewId })
+      .eq('id', code)
+    if (!error) {
+      setEvent(prev => ({ ...prev, group_id: selectedCrewId }))
+      setShowAddCrew(false)
+      setSelectedCrewId('')
+      const { data: groupData } = await supabase.from('groups').select('share_code').eq('id', selectedCrewId).single()
+      setGroupShareCode(groupData?.share_code || '')
     }
   }
 
@@ -101,8 +134,9 @@ export default function EventView() {
   }
 
   const handleCopyInvite = () => {
-    if (!groupShareCode) return
-    const inviteLink = `${window.location.origin}/join/${groupShareCode}?eventId=${event.id}&addToGroup=${inviteAddToGroup ? '1' : '0'}`
+    const inviteLink = groupShareCode
+      ? `${window.location.origin}/join/${groupShareCode}?eventId=${event.id}&addToGroup=${inviteAddToGroup ? '1' : '0'}`
+      : `${window.location.origin}/room/${event.id}`
     navigator.clipboard.writeText(inviteLink)
     setInviteCopied(true)
     setTimeout(() => setInviteCopied(false), 2000)
@@ -116,8 +150,8 @@ export default function EventView() {
     <div style={{ paddingBottom: '40px', height: '100%', overflowY: 'auto' }}>
       
       {/* BACK NAVIGATION */}
-      <button onClick={() => navigate(`/group/${event.group_id}`)} style={{ background: 'none', color: '#888', padding: 0, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-        <ChevronLeft size={20} /> Back to Crew
+      <button onClick={() => navigate(event.group_id ? `/group/${event.group_id}` : `/`)} style={{ background: 'none', color: '#888', padding: 0, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+        <ChevronLeft size={20} /> Back to {event.group_id ? 'Crew' : 'Hub'}
       </button>
 
       {/* HEADER */}
@@ -141,6 +175,11 @@ export default function EventView() {
       <div className="flex-between" style={{ marginBottom: '20px' }}>
         <span className="text-sm" style={{ fontWeight: 'bold', letterSpacing: '1px' }}>BALLOT ({myNominations.length + crewNominations.length})</span>
         <div className="flex-gap">
+            {event.group_id === null && userId && event.created_by === userId && (
+              <button onClick={() => setShowAddCrew(!showAddCrew)} style={{ background: 'rgba(255,255,255,0.1)', color: 'white', padding: '10px', borderRadius: '50%' }}>
+                  <Users size={18} />
+              </button>
+            )}
             <button onClick={() => setShowInvite(true)} style={{ background: 'rgba(255,255,255,0.1)', color: 'white', padding: '10px', borderRadius: '50%' }}>
                 <LinkIcon size={18} />
             </button>
@@ -152,6 +191,23 @@ export default function EventView() {
             </button>
         </div>
       </div>
+
+      {showAddCrew && (
+        <div className="glass-panel" style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div style={{ fontWeight: 700 }}>Add a Crew to this Event</div>
+          {myGroups.length === 0 ? (
+            <p className="text-sm">Join or create a crew first.</p>
+          ) : (
+            <>
+              <select value={selectedCrewId} onChange={(e) => setSelectedCrewId(e.target.value)}>
+                <option value="">Select a Crew</option>
+                {myGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </select>
+              <button onClick={handleAddCrew} style={{ background: '#00E5FF', color: 'black' }}>Save Crew</button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* EMPTY STATE */}
       {myNominations.length === 0 && crewNominations.length === 0 && (
@@ -193,15 +249,17 @@ export default function EventView() {
                 <button onClick={() => setShowInvite(false)} style={{ background: '#333', padding: '8px', borderRadius: '50%', color: 'white' }}>X</button>
               </div>
 
-              <div style={{ background: 'rgba(255,255,255,0.05)', padding: '12px', borderRadius: '12px', marginBottom: '16px' }}>
-                <div className="flex-between">
-                  <span style={{ fontWeight: 600 }}>Add to crew too</span>
-                  <input type="checkbox" checked={inviteAddToGroup} onChange={(e) => setInviteAddToGroup(e.target.checked)} />
+              {groupShareCode && (
+                <div style={{ background: 'rgba(255,255,255,0.05)', padding: '12px', borderRadius: '12px', marginBottom: '16px' }}>
+                  <div className="flex-between">
+                    <span style={{ fontWeight: 600 }}>Add to crew too</span>
+                    <input type="checkbox" checked={inviteAddToGroup} onChange={(e) => setInviteAddToGroup(e.target.checked)} />
+                  </div>
+                  <p className="text-sm" style={{ marginTop: '8px' }}>
+                    {inviteAddToGroup ? "They'll join the crew and land on this event." : "They'll land on this event without joining the crew."}
+                  </p>
                 </div>
-                <p className="text-sm" style={{ marginTop: '8px' }}>
-                  {inviteAddToGroup ? "They'll join the crew and land on this event." : "They'll land on this event without joining the crew."}
-                </p>
-              </div>
+              )}
 
               <button onClick={handleCopyInvite} style={{ background: '#00E5FF', color: 'black', padding: '12px', borderRadius: '12px', fontWeight: 700 }}>
                 {inviteCopied ? <span style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}><Check size={16}/> Copied</span> : 'Copy Invite Link'}

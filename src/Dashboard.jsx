@@ -25,7 +25,6 @@ export default function Dashboard({ session }) {
   const [newEventTitle, setNewEventTitle] = useState('')
   const [newEventDate, setNewEventDate] = useState('')
   const [newEventLocation, setNewEventLocation] = useState('')
-  const [selectedGroupId, setSelectedGroupId] = useState('')
   const [showDateTimePicker, setShowDateTimePicker] = useState(false)
   const [pickedDate, setPickedDate] = useState(null)
   const [pickedTime, setPickedTime] = useState('')
@@ -170,7 +169,7 @@ export default function Dashboard({ session }) {
     const { data: createdEvent, error } = await supabase
       .from('events')
       .insert([{ 
-        group_id: selectedGroupId || null, 
+        group_id: null, 
         title: newEventTitle, 
         event_date: newEventDate || null,
         location_address: newEventLocation || null,
@@ -185,11 +184,7 @@ export default function Dashboard({ session }) {
       setNewEventDate('')
       setNewEventLocation('')
       setShowCreateEvent(false)
-      const group = groups.find(g => g.id === selectedGroupId)
-      if (group?.share_code && createdEvent?.id) {
-        const inviteLink = `${window.location.origin}/join/${group.share_code}?eventId=${createdEvent.id}&addToGroup=1`
-        setLastInviteLink(inviteLink)
-      } else if (createdEvent?.id) {
+      if (createdEvent?.id) {
         setLastInviteLink(`${window.location.origin}/room/${createdEvent.id}`)
       }
       if (createdEvent?.id) {
@@ -350,10 +345,6 @@ export default function Dashboard({ session }) {
             {showCreateEvent && (
               <div className="glass-panel" style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <input placeholder="Event Title (e.g. Friday Horror)" value={newEventTitle} onChange={(e) => setNewEventTitle(e.target.value)} autoFocus />
-                <select value={selectedGroupId} onChange={(e) => setSelectedGroupId(e.target.value)}>
-                  <option value="">No Crew (solo event)</option>
-                  {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                </select>
                 <button
                   onClick={openDateTimePicker}
                   style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.08)', color: 'white', padding: '12px', borderRadius: '12px', justifyContent: 'center' }}
@@ -389,8 +380,13 @@ export default function Dashboard({ session }) {
                     <div className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px' }}>
                       <div>
                         <div style={{ fontWeight: 700, color: 'white' }}>{event.title}</div>
-                        <div className="text-sm">
+                        <div className="text-sm" style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
                           {groupNameById[event.group_id] || 'No Crew'} • {event.event_date ? new Date(event.event_date).toLocaleDateString() : 'TBD'}
+                          {event.created_by === session.user.id && (
+                            <span style={{ background: 'rgba(0,229,255,0.15)', color: '#00E5FF', padding: '2px 8px', borderRadius: '10px', fontSize: '0.75rem' }}>
+                              Creator
+                            </span>
+                          )}
                         </div>
                       </div>
                       <span style={{ color: 'var(--text-muted)' }}>→</span>

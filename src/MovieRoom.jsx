@@ -4,7 +4,7 @@ import { supabase } from './supabaseClient'
 import { AnimatePresence } from 'framer-motion'
 import { ThumbsUp, ThumbsDown, Heart, Plus, Trophy, MapPin, Calendar, Ticket, ChevronLeft } from 'lucide-react'
 import SearchMovies from './SearchMovies'
-import HostView from './HostView'
+import ResultsView from './ResultsView'
 import MovieCard from './MovieCard'
 
 export default function MovieRoom() {
@@ -14,7 +14,7 @@ export default function MovieRoom() {
   const [nominatedMovies, setNominatedMovies] = useState([])
   const [myVotes, setMyVotes] = useState({}) 
   const [showSearch, setShowSearch] = useState(false)
-  const [showHostView, setShowHostView] = useState(false)
+  const [showResultsView, setShowResultsView] = useState(false)
 
   useEffect(() => {
     if (code) {
@@ -121,7 +121,7 @@ export default function MovieRoom() {
       <div className="flex-between" style={{ marginBottom: '20px' }}>
         <span className="text-sm" style={{ fontWeight: 'bold', letterSpacing: '1px' }}>NOMINATIONS ({nominatedMovies.length})</span>
         <div className="flex-gap">
-            <button onClick={() => setShowHostView(true)} style={{ background: '#ffd700', color: 'black', padding: '10px', borderRadius: '50%' }}>
+            <button onClick={() => setShowResultsView(true)} style={{ background: '#ffd700', color: 'black', padding: '10px', borderRadius: '50%' }}>
                 <Trophy size={20} />
             </button>
             <button onClick={() => setShowSearch(true)} style={{ background: 'var(--primary)', color: 'white', padding: '10px 16px', borderRadius: '20px', display: 'flex', gap: '6px', alignItems: 'center' }}>
@@ -159,7 +159,7 @@ export default function MovieRoom() {
       )}
 
       {/* MODALS */}
-      {showHostView && <HostView sessionId={code} onClose={() => setShowHostView(false)} />}
+      {showResultsView && <ResultsView eventId={code} onClose={() => setShowResultsView(false)} />}
       <AnimatePresence>
         {showSearch && (
             <SearchMovies 

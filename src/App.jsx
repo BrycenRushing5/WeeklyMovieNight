@@ -6,6 +6,7 @@ import Dashboard from './Dashboard'
 import JoinGroup from './JoinGroup'
 import GroupView from './GroupView' 
 import EventView from './EventView'
+import ProfileView from './ProfileView'
 
 function App() {
   const [session, setSession] = useState(null)
@@ -44,6 +45,7 @@ function App() {
         {/* <Route path="/group/:groupId" element={<GroupView session={session} />} /> */}
         <Route path="/group/:groupId" element={<GroupView session={session} />} />
         <Route path="/room/:code" element={<EventView />} />
+        <Route path="/profile" element={<ProfileView session={session} />} />
       </Routes>
     </BrowserRouter>
   )

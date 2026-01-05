@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { LogOut, Plus, Users, Book, Search, Filter, Calendar, Clock, Link as LinkIcon } from 'lucide-react'
+import { LogOut, Plus, Users, Book, Search, Filter, Calendar, Clock, Link as LinkIcon, User } from 'lucide-react'
 import { supabase } from './supabaseClient'
 import SearchMovies from './SearchMovies'
 import MovieCard from './MovieCard'
@@ -271,10 +271,16 @@ export default function Dashboard({ session }) {
           </h1>
           <p className="text-sm">@{username}</p>
         </div>
-        {/* FIX: Logout button is now auto width */}
-        <button onClick={() => supabase.auth.signOut()} style={{ width: 'auto', background: 'rgba(255,255,255,0.1)', padding: '10px', borderRadius: '50%', color: 'white' }}>
-            <LogOut size={20} />
-        </button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <Link to="/profile" style={{ textDecoration: 'none' }}>
+            <button style={{ width: 'auto', background: 'rgba(255,255,255,0.1)', padding: '10px', borderRadius: '50%', color: 'white' }}>
+              <User size={20} />
+            </button>
+          </Link>
+          <button onClick={() => supabase.auth.signOut()} style={{ width: 'auto', background: 'rgba(255,255,255,0.1)', padding: '10px', borderRadius: '50%', color: 'white' }}>
+              <LogOut size={20} />
+          </button>
+        </div>
       </div>
 
       {/* TABS */}
@@ -421,7 +427,7 @@ export default function Dashboard({ session }) {
                   </div>
                   <div className="flex-between">
                     <span className="text-sm">Min Score {watchMinScore}%</span>
-                    <input type="checkbox" checked={useWatchScore} onChange={(e) => setUseWatchScore(e.target.checked)} />
+                    <input className="toggle" type="checkbox" checked={useWatchScore} onChange={(e) => setUseWatchScore(e.target.checked)} />
                   </div>
                   {useWatchScore && (
                     <input type="range" value={watchMinScore} onChange={(e) => setWatchMinScore(Number(e.target.value))} />

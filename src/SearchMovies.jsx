@@ -10,6 +10,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
   const [activeTab, setActiveTab] = useState('search') 
   const [searchTerm, setSearchTerm] = useState('')
   const [results, setResults] = useState([])
+  const [watchlistScope, setWatchlistScope] = useState('mine')
   
   // Lists
   const [myWatchlist, setMyWatchlist] = useState([])
@@ -32,9 +33,9 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
         const delayDebounceFn = setTimeout(() => searchMovies(), 300)
         return () => clearTimeout(delayDebounceFn)
     }
-    if (activeTab === 'watchlist') fetchMyWatchlist()
-    if (activeTab === 'crew') fetchCrewWatchlists()
-  }, [searchTerm, activeTab, genreFilter, minScore, useScoreFilter, isWritingIn])
+    if (activeTab === 'watchlist' && watchlistScope === 'mine') fetchMyWatchlist()
+    if (activeTab === 'watchlist' && watchlistScope === 'crew') fetchCrewWatchlists()
+  }, [searchTerm, activeTab, watchlistScope, genreFilter, minScore, useScoreFilter, isWritingIn])
 
   // 1. GLOBAL SEARCH
   async function searchMovies() {
@@ -122,8 +123,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
         {isEventMode && (
           <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', overflowX: 'auto', paddingBottom: '5px' }}>
               <TabButton active={activeTab === 'search'} onClick={() => {setActiveTab('search'); setIsWritingIn(false)}}><Search size={16}/> Search</TabButton>
-              <TabButton active={activeTab === 'watchlist'} onClick={() => setActiveTab('watchlist')}><Book size={16}/> Mine</TabButton>
-              <TabButton active={activeTab === 'crew'} onClick={() => setActiveTab('crew')}><Users size={16}/> Crew</TabButton>
+              <TabButton active={activeTab === 'watchlist'} onClick={() => { setActiveTab('watchlist'); setIsWritingIn(false) }}><Book size={16}/> Watchlist</TabButton>
               <TabButton active={activeTab === 'theater'} onClick={() => setActiveTab('theater')}><Ticket size={16}/> Out</TabButton>
           </div>
         )}
@@ -165,7 +165,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                          </div>
                          <div className="flex-between">
                             <span className="text-sm">Min Score {minScore}%</span>
-                            <input type="checkbox" checked={useScoreFilter} onChange={(e) => setUseScoreFilter(e.target.checked)} />
+                            <input className="toggle" type="checkbox" checked={useScoreFilter} onChange={(e) => setUseScoreFilter(e.target.checked)} />
                          </div>
                          {useScoreFilter && <input type="range" value={minScore} onChange={(e) => setMinScore(Number(e.target.value))} />}
                     </div>
@@ -173,11 +173,29 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
             </div>
         )}
 
+        {/* WATCHLIST SUB-TABS */}
+        {activeTab === 'watchlist' && (
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '12px' }}>
+            <button
+              onClick={() => setWatchlistScope('mine')}
+              style={{ flex: 1, padding: '10px', borderRadius: '12px', background: watchlistScope === 'mine' ? '#00E5FF' : 'rgba(255,255,255,0.1)', color: watchlistScope === 'mine' ? 'black' : 'white', fontWeight: 700 }}
+            >
+              My Watchlist
+            </button>
+            <button
+              onClick={() => setWatchlistScope('crew')}
+              style={{ flex: 1, padding: '10px', borderRadius: '12px', background: watchlistScope === 'crew' ? '#00E5FF' : 'rgba(255,255,255,0.1)', color: watchlistScope === 'crew' ? 'black' : 'white', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+            >
+              <Users size={16} /> Crew's Watchlist
+            </button>
+          </div>
+        )}
+
         {/* LIST RENDERING */}
         <div style={{ flex: 1, overflowY: 'auto' }}>
             {activeTab === 'search' && !isWritingIn && results.map(m => <MovieRow key={m.id} movie={m} onSelect={() => handleSelect(m)} />)}
-            {activeTab === 'watchlist' && myWatchlist.map(m => <MovieRow key={m.id} movie={m} onSelect={() => handleSelect(m)} />)}
-            {activeTab === 'crew' && crewWatchlist.map(m => <MovieRow key={m.id} movie={m} onSelect={() => handleSelect(m)} />)}
+            {activeTab === 'watchlist' && watchlistScope === 'mine' && myWatchlist.map(m => <MovieRow key={m.id} movie={m} onSelect={() => handleSelect(m)} />)}
+            {activeTab === 'watchlist' && watchlistScope === 'crew' && crewWatchlist.map(m => <MovieRow key={m.id} movie={m} onSelect={() => handleSelect(m)} />)}
             
             {/* Empty States */}
             {activeTab === 'search' && !isWritingIn && isEventMode && (
@@ -187,7 +205,9 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                 </button>
               </div>
             )}
-            {activeTab === 'crew' && crewWatchlist.length === 0 && <p className="text-sm" style={{textAlign:'center'}}>Your friends have empty watchlists.</p>}
+            {activeTab === 'watchlist' && watchlistScope === 'crew' && crewWatchlist.length === 0 && (
+              <p className="text-sm" style={{textAlign:'center'}}>Your friends have empty watchlists.</p>
+            )}
             
             {/* Write In Form */}
             {isWritingIn && (
@@ -222,5 +242,19 @@ function TabButton({ active, children, onClick }) {
 }
 
 function MovieRow({ movie, onSelect }) {
-    return <div onClick={onSelect} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', marginBottom: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', cursor: 'pointer' }}><div><div style={{ fontWeight: '600' }}>{movie.title}</div><div className="text-sm">{movie.genre?.join(', ')}</div></div>{movie.rt_score && <span className="tag">🍅 {movie.rt_score}%</span>}</div>
+    const description = movie.description?.trim()
+    return (
+      <div onClick={onSelect} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', marginBottom: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', cursor: 'pointer', gap: '12px' }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: '600' }}>{movie.title}</div>
+          <div className="text-sm">{movie.genre?.join(', ')}</div>
+          {description && (
+            <div className="text-sm" style={{ color: '#9ca3af', marginTop: '6px' }}>
+              {description}
+            </div>
+          )}
+        </div>
+        {movie.rt_score && <span className="tag">🍅 {movie.rt_score}%</span>}
+      </div>
+    )
 }

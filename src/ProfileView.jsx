@@ -1,0 +1,149 @@
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { supabase } from './supabaseClient'
+import { User, Trophy, Target, Film, Sparkles, ChevronLeft, Star, ThumbsUp } from 'lucide-react'
+import MovieCard from './MovieCard'
+
+export default function ProfileView({ session }) {
+  const [loading, setLoading] = useState(true)
+  const [coordinatorCount, setCoordinatorCount] = useState(0)
+  const [nominationSuccess, setNominationSuccess] = useState(0)
+  const [topGenre, setTopGenre] = useState('N/A')
+  const [genreCount, setGenreCount] = useState(0)
+  const [reviewHistory, setReviewHistory] = useState([])
+
+  useEffect(() => {
+    if (session?.user) loadStats()
+  }, [session])
+
+  async function loadStats() {
+    setLoading(true)
+    const userId = session.user.id
+
+    const { data: createdEvents } = await supabase
+      .from('events')
+      .select('id')
+      .eq('created_by', userId)
+
+    const { data: nominations } = await supabase
+      .from('nominations')
+      .select('id, movie_id, event:events (id, selected_movie_id)')
+      .eq('nominated_by', userId)
+
+    const nominationTotal = nominations?.length || 0
+    const nominationWins = (nominations || []).filter(n => n.event?.selected_movie_id === n.movie_id).length
+    const successPercent = nominationTotal ? Math.round((nominationWins / nominationTotal) * 100) : 0
+
+    const { data: reviews } = await supabase
+      .from('reviews')
+      .select('id, rating, comment, would_watch_again, movie:movies (*)')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+
+    const genreTally = {}
+    ;(reviews || []).forEach((review) => {
+      const genres = review.movie?.genre || []
+      const list = Array.isArray(genres) ? genres : [genres]
+      list.forEach((g) => {
+        if (!g) return
+        genreTally[g] = (genreTally[g] || 0) + 1
+      })
+    })
+
+    let bestGenre = 'N/A'
+    let bestCount = 0
+    Object.entries(genreTally).forEach(([genre, count]) => {
+      if (count > bestCount) {
+        bestGenre = genre
+        bestCount = count
+      }
+    })
+
+    setCoordinatorCount(createdEvents?.length || 0)
+    setNominationSuccess(successPercent)
+    setTopGenre(bestGenre)
+    setGenreCount(bestCount)
+    setReviewHistory(reviews || [])
+    setLoading(false)
+  }
+
+  if (loading) return <div style={{ padding: '40px', textAlign: 'center' }}>Loading profile...</div>
+
+  return (
+    <div style={{ paddingBottom: '40px', height: '100%', overflowY: 'auto' }}>
+      <Link to="/" style={{ textDecoration: 'none' }}>
+        <button style={{ background: 'none', color: '#888', padding: 0, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <ChevronLeft size={20} /> Back to Hub
+        </button>
+      </Link>
+
+      <div className="glass-panel" style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div style={{ width: '54px', height: '54px', borderRadius: '50%', background: 'rgba(0,229,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <User size={26} color="#00E5FF" />
+        </div>
+        <div>
+          <h1 style={{ margin: 0, fontSize: '1.6rem' }}>{session.user.user_metadata.username || 'Movie Fan'}</h1>
+          <div className="text-sm" style={{ color: '#aaa' }}>{session.user.email}</div>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginBottom: '24px' }}>
+        <div className="glass-panel">
+          <div className="text-sm" style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#aaa' }}>
+            <Trophy size={16} /> The Coordinator
+          </div>
+          <div style={{ fontSize: '1.8rem', fontWeight: 800 }}>{coordinatorCount}</div>
+          <div className="text-sm">Events you created</div>
+        </div>
+        <div className="glass-panel">
+          <div className="text-sm" style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#aaa' }}>
+            <Target size={16} /> Nomination Success
+          </div>
+          <div style={{ fontSize: '1.8rem', fontWeight: 800 }}>{nominationSuccess}%</div>
+          <div className="text-sm">Your picks that won</div>
+        </div>
+        <div className="glass-panel">
+          <div className="text-sm" style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#aaa' }}>
+            <Sparkles size={16} /> Genre Junkie
+          </div>
+          <div style={{ fontSize: '1.4rem', fontWeight: 800 }}>{topGenre}</div>
+          <div className="text-sm">{genreCount ? `${genreCount} reviews` : 'No reviews yet'}</div>
+        </div>
+      </div>
+
+      <div style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <Film size={18} color="#00E5FF" />
+        <h2 style={{ margin: 0 }}>Review History</h2>
+      </div>
+
+      {reviewHistory.length === 0 && (
+        <div className="text-sm" style={{ textAlign: 'center', color: '#888' }}>Rate a movie to build your history.</div>
+      )}
+
+      {reviewHistory.map((review) => (
+        <MovieCard
+          key={review.id}
+          movie={review.movie}
+          meta={
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#FFD166', fontWeight: 700 }}>
+                <Star size={14} /> {review.rating}/10
+              </span>
+              {review.would_watch_again && (
+                <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#00E5FF', fontWeight: 600 }}>
+                  <ThumbsUp size={14} /> Would watch again
+                </span>
+              )}
+            </div>
+          }
+        >
+          {review.comment && (
+            <p style={{ margin: 0, fontSize: '0.95rem', color: '#cbd5e1' }}>
+              "{review.comment}"
+            </p>
+          )}
+        </MovieCard>
+      ))}
+    </div>
+  )
+}

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ThumbsUp, ThumbsDown, Heart, Plus, Film, MapPin, Calendar, Ticket, ChevronLeft, Link as LinkIcon, Check, Users, Star, RotateCcw, ChevronDown, ChevronUp, X } from 'lucide-react'
+import { ThumbsUp, ThumbsDown, Heart, Plus, Film, MapPin, Calendar, Clock, Ticket, ChevronLeft, Link as LinkIcon, Check, Users, Star, RotateCcw, ChevronDown, ChevronUp, X } from 'lucide-react'
 import SearchMovies from './SearchMovies'
 import ResultsView from './ResultsView'
 import MovieCard from './MovieCard'
@@ -19,6 +19,12 @@ export default function EventView() {
   const [myGroups, setMyGroups] = useState([])
   const [showAddCrew, setShowAddCrew] = useState(false)
   const [selectedCrewId, setSelectedCrewId] = useState('')
+  const [showEditEvent, setShowEditEvent] = useState(false)
+  const [editTitle, setEditTitle] = useState('')
+  const [editLocation, setEditLocation] = useState('')
+  const [editDate, setEditDate] = useState('')
+  const [savingEvent, setSavingEvent] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   
   // Split Ballot States
   const [myNominations, setMyNominations] = useState([])
@@ -34,12 +40,30 @@ export default function EventView() {
   const [inviteAddToGroup, setInviteAddToGroup] = useState(true)
   const [inviteCopied, setInviteCopied] = useState(false)
   const [groupShareCode, setGroupShareCode] = useState('')
+  const [showAttendees, setShowAttendees] = useState(false)
+  const [eventAttendees, setEventAttendees] = useState([])
+  const [attendeesLoading, setAttendeesLoading] = useState(false)
+  const [showMapChoice, setShowMapChoice] = useState(false)
+  const [mapQuery, setMapQuery] = useState('')
   const [selectedMovie, setSelectedMovie] = useState(null)
   const [showRateMovie, setShowRateMovie] = useState(false)
+  const [showDateTimePicker, setShowDateTimePicker] = useState(false)
+  const [pickedDate, setPickedDate] = useState(null)
+  const [pickedTime, setPickedTime] = useState('')
+  const [pickedPeriod, setPickedPeriod] = useState('PM')
+  const [displayMonth, setDisplayMonth] = useState(() => {
+    const now = new Date()
+    return new Date(now.getFullYear(), now.getMonth(), 1)
+  })
 
   useEffect(() => {
     if (code) loadData()
   }, [code])
+
+  useEffect(() => {
+    if (!showAttendees) return
+    fetchAttendees()
+  }, [showAttendees])
 
   useEffect(() => {
     if (!code) return
@@ -119,6 +143,90 @@ export default function EventView() {
     if (data) setMyGroups(data.map(item => item.group))
   }
 
+  async function fetchAttendees() {
+    setAttendeesLoading(true)
+    const { data } = await supabase
+      .from('event_attendees')
+      .select('user_id, profiles(display_name, username)')
+      .eq('event_id', code)
+    setEventAttendees(data || [])
+    setAttendeesLoading(false)
+  }
+
+  function formatDateTimeLabel(value) {
+    if (!value) return 'Pick date & time'
+    const d = new Date(value)
+    return d.toLocaleString([], { weekday: 'short', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+  }
+
+  function openDateTimePicker() {
+    const existing = editDate ? new Date(editDate) : null
+    const base = existing || new Date()
+    if (!existing) {
+      base.setHours(19, 0, 0, 0)
+    }
+    const roundedMinutes = Math.round(base.getMinutes() / 30) * 30
+    base.setMinutes(roundedMinutes)
+    base.setSeconds(0)
+    base.setMilliseconds(0)
+    setPickedDate(new Date(base.getFullYear(), base.getMonth(), base.getDate()))
+    setPickedTime(`${String(base.getHours()).padStart(2, '0')}:${String(base.getMinutes()).padStart(2, '0')}`)
+    setPickedPeriod(base.getHours() >= 12 ? 'PM' : 'AM')
+    setDisplayMonth(new Date(base.getFullYear(), base.getMonth(), 1))
+    setShowDateTimePicker(true)
+  }
+
+  function confirmDateTime() {
+    if (!pickedDate || !pickedTime) return
+    const [hh, mm] = pickedTime.split(':').map(Number)
+    const composed = new Date(pickedDate.getFullYear(), pickedDate.getMonth(), pickedDate.getDate(), hh, mm, 0, 0)
+    setEditDate(composed.toISOString())
+    setShowDateTimePicker(false)
+  }
+
+  function startEditEvent() {
+    if (!event) return
+    setEditTitle(event.title || '')
+    setEditLocation(event.location_address || '')
+    setEditDate(event.event_date || '')
+    setShowEditEvent(true)
+  }
+
+  async function handleUpdateEvent() {
+    const nextTitle = editTitle.trim()
+    if (!nextTitle) return
+    setSavingEvent(true)
+    const updates = {
+      title: nextTitle,
+      event_date: editDate || null,
+      location_address: editLocation.trim() || null
+    }
+    const { error } = await supabase
+      .from('events')
+      .update(updates)
+      .eq('id', code)
+    setSavingEvent(false)
+    if (error) {
+      alert(`Error: ${error.message}`)
+      return
+    }
+    setEvent(prev => (prev ? { ...prev, ...updates } : prev))
+    setShowEditEvent(false)
+  }
+
+  async function handleDeleteEvent() {
+    const { error } = await supabase
+      .from('events')
+      .delete()
+      .eq('id', code)
+    if (error) {
+      alert(`Error: ${error.message}`)
+      return
+    }
+    setShowDeleteConfirm(false)
+    navigate(event?.group_id ? `/group/${event.group_id}` : `/`)
+  }
+
   async function handleAddCrew() {
     if (!selectedCrewId) return
     const { error } = await supabase
@@ -179,16 +287,19 @@ export default function EventView() {
 
   const openMaps = () => {
     if (!event.location_address) return
-    const query = encodeURIComponent(event.location_address)
-    window.open(`https://www.google.com/maps/search/?api=1&query=$${query}`, '_blank')
+    setMapQuery(event.location_address)
+    setShowMapChoice(true)
   }
 
-  const handleCopyInvite = () => {
+  const handleCopyInvite = ({ closeAfter = false } = {}) => {
     const inviteLink = groupShareCode
       ? `${window.location.origin}/join/${groupShareCode}?eventId=${event.id}&addToGroup=${inviteAddToGroup ? '1' : '0'}`
       : `${window.location.origin}/room/${event.id}`
     navigator.clipboard.writeText(inviteLink)
     setInviteCopied(true)
+    if (closeAfter) {
+      setTimeout(() => setShowInvite(false), 350)
+    }
     setTimeout(() => setInviteCopied(false), 2000)
   }
 
@@ -220,6 +331,7 @@ export default function EventView() {
   const favoriteMyNominations = myNominations.filter(item => myVotes[item.movie.id] === 2)
   const favoriteCrewNominations = crewNominations.filter(item => myVotes[item.movie.id] === 2)
   const totalFavorites = favoriteMyNominations.length + favoriteCrewNominations.length
+  const hasNominations = myNominations.length + crewNominations.length > 0
   const filteredMyNominations = ballotFilter === 'missing'
     ? missingMyNominations
     : ballotFilter === 'disliked'
@@ -248,38 +360,136 @@ export default function EventView() {
       </button>
 
       {/* HEADER */}
-      <div style={{ marginBottom: '20px' }}>
-        <h1 style={{ fontSize: '2rem', margin: 0, lineHeight: 1.1 }}>{event.title}</h1>
-        <div className="flex-gap" style={{ marginTop: '12px', color: '#ccc', fontSize: '0.9rem', flexWrap: 'wrap' }}>
-            {event.event_date && (
-                <span className="flex-gap" style={{background:'rgba(255,255,255,0.1)', padding:'5px 10px', borderRadius:'8px'}}>
-                    <Calendar size={16}/> {new Date(event.event_date).toLocaleString([], {weekday:'short', month:'numeric', day:'numeric', hour:'numeric', minute:'2-digit'})}
-                </span>
-            )}
-            {event.location_address && (
-                <span className="flex-gap maps-link" onClick={openMaps} style={{background:'rgba(0, 229, 255, 0.1)', color: '#00E5FF', padding:'5px 10px', borderRadius:'8px', cursor: 'pointer'}}>
-                    <MapPin size={16}/> {event.location_address}
-                </span>
-            )}
+      <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h1 style={{ fontSize: '2rem', margin: 0, lineHeight: 1.1 }}>{event.title}</h1>
+          <div className="flex-gap" style={{ marginTop: '10px', color: '#ccc', fontSize: '0.9rem', flexWrap: 'wrap' }}>
+              {event.event_date && (
+                  <span className="flex-gap" style={{background:'rgba(255,255,255,0.1)', padding:'5px 10px', borderRadius:'8px'}}>
+                      <Calendar size={16}/> {new Date(event.event_date).toLocaleString([], {weekday:'short', month:'numeric', day:'numeric', hour:'numeric', minute:'2-digit'})}
+                  </span>
+              )}
+              <button
+                onClick={() => setShowAttendees(prev => !prev)}
+                style={{ background: showAttendees ? 'rgba(0,229,255,0.2)' : 'rgba(255,255,255,0.08)', color: showAttendees ? '#00E5FF' : 'white', padding: '6px 10px', borderRadius: '999px', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, whiteSpace: 'nowrap' }}
+              >
+                <Users size={16} /> {showAttendees ? 'Hide Guests' : 'Guests'}
+              </button>
+              {event.location_address && (
+                  <span className="flex-gap maps-link" onClick={openMaps} style={{background:'rgba(0, 229, 255, 0.1)', color: '#00E5FF', padding:'5px 10px', borderRadius:'8px', cursor: 'pointer', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '6px'}}>
+                      <MapPin size={16}/> {event.location_address}
+                  </span>
+              )}
+          </div>
+        </div>
+        <div className="flex-gap" style={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {userId && event.created_by === userId && (
+            <button
+              onClick={() => (showEditEvent ? setShowEditEvent(false) : startEditEvent())}
+              style={{ background: showEditEvent ? 'rgba(0,229,255,0.2)' : 'rgba(255,255,255,0.08)', color: showEditEvent ? '#00E5FF' : 'white', padding: '8px 12px', borderRadius: '999px', fontWeight: 600, whiteSpace: 'nowrap' }}
+            >
+              {showEditEvent ? 'Done' : 'Edit'}
+            </button>
+          )}
         </div>
       </div>
+      <p className="text-sm" style={{ color: '#9ca3af', marginTop: '-6px', marginBottom: '18px' }}>
+        Events are shared movie nights. Nominate options, vote with your crew, then select the winner.
+      </p>
+
+      {showEditEvent && (
+        <div className="glass-panel" style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <input placeholder="Event Title" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
+          <button
+            onClick={openDateTimePicker}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.08)', color: 'white', padding: '12px', borderRadius: '12px', justifyContent: 'center' }}
+          >
+            <Calendar size={16} />
+            <Clock size={16} />
+            {formatDateTimeLabel(editDate)}
+          </button>
+          <input placeholder="Location(Optional)" value={editLocation} onChange={(e) => setEditLocation(e.target.value)} />
+          <button
+            onClick={handleUpdateEvent}
+            disabled={savingEvent}
+            style={{ background: '#00E5FF', color: 'black', padding: '12px', borderRadius: '999px', fontWeight: 700 }}
+          >
+            {savingEvent ? 'Saving...' : 'Save Changes'}
+          </button>
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            style={{ background: 'rgba(255,77,109,0.15)', color: '#ff4d6d', padding: '10px', borderRadius: '999px', fontWeight: 700 }}
+          >
+            Delete Event
+          </button>
+        </div>
+      )}
+
+      {showAttendees && (
+        <div className="glass-panel" style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div style={{ fontWeight: 700 }}>Event Guests</div>
+          {attendeesLoading ? (
+            <p className="text-sm">Loading...</p>
+          ) : eventAttendees.length === 0 ? (
+            <p className="text-sm">No attendees yet.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {eventAttendees.map(attendee => {
+                const name = attendee.profiles?.display_name || attendee.profiles?.username || 'Unknown'
+                const isCreator = attendee.user_id === event.created_by
+                return (
+                  <div key={attendee.user_id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.06)', padding: '10px 12px', borderRadius: '12px' }}>
+                    <span style={{ fontWeight: 600 }}>{name}</span>
+                    {isCreator && (
+                      <span style={{ background: 'rgba(0,229,255,0.15)', color: '#00E5FF', padding: '2px 8px', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 700 }}>
+                        Creator
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div style={{ height: '1px', background: 'rgba(255,255,255,0.08)', margin: '16px 0' }} />
 
       {!isWatching && (
         <div className="flex-between" style={{ marginBottom: '20px' }}>
           <span className="text-sm" style={{ fontWeight: 'bold', letterSpacing: '1px' }}>BALLOT ({myNominations.length + crewNominations.length})</span>
           <div className="flex-gap">
               {event.group_id === null && userId && event.created_by === userId && (
-                <button onClick={() => setShowAddCrew(!showAddCrew)} style={{ background: 'rgba(255,255,255,0.1)', color: 'white', padding: '10px', borderRadius: '50%' }}>
+                <button onClick={() => setShowAddCrew(!showAddCrew)} style={{ background: showAddCrew ? '#00E5FF' : 'rgba(255,255,255,0.1)', color: showAddCrew ? 'black' : 'white', padding: '10px', borderRadius: '50%' }}>
                     <Users size={18} />
                 </button>
               )}
-              <button onClick={() => setShowInvite(true)} style={{ background: 'rgba(255,255,255,0.1)', color: 'white', padding: '10px 14px', borderRadius: '999px', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
-                  <LinkIcon size={18} /> Invite
+              <button
+                onClick={() => (groupShareCode ? setShowInvite(true) : handleCopyInvite())}
+                style={{ background: 'rgba(255,255,255,0.1)', color: 'white', padding: '10px 14px', borderRadius: '999px', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}
+              >
+                  {inviteCopied ? <Check size={18} /> : <LinkIcon size={18} />}
+                  {inviteCopied ? 'Copied' : 'Invite'}
               </button>
               <button onClick={() => setShowSearch(true)} style={{ background: 'var(--primary)', color: 'white', padding: '10px 16px', borderRadius: '20px', display: 'flex', gap: '6px', alignItems: 'center' }}>
                   <Plus size={18} /> Nominate
               </button>
-              <button onClick={() => setShowResultsView(true)} style={{ background: '#ffd700', color: 'black', padding: '10px 14px', borderRadius: '999px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700 }}>
+              <button
+                onClick={() => hasNominations && setShowResultsView(true)}
+                disabled={!hasNominations}
+                style={{
+                  background: hasNominations ? '#ffd700' : 'rgba(255,255,255,0.08)',
+                  color: hasNominations ? 'black' : '#94a3b8',
+                  padding: '10px 14px',
+                  borderRadius: '999px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontWeight: 700,
+                  cursor: hasNominations ? 'pointer' : 'not-allowed'
+                }}
+                title={hasNominations ? 'Select a movie' : 'Add nominations first'}
+              >
                   <Film size={18} /> Select
               </button>
           </div>
@@ -348,7 +558,22 @@ export default function EventView() {
                 <option value="">Select a Crew</option>
                 {myGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
               </select>
-              <button onClick={handleAddCrew} style={{ background: '#00E5FF', color: 'black' }}>Save Crew</button>
+              <button
+                onClick={handleAddCrew}
+                style={{
+                  background: '#00E5FF',
+                  color: 'black',
+                  width: '100%',
+                  padding: '12px',
+                  borderRadius: '999px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 700
+                }}
+              >
+                + Add Crew
+              </button>
             </>
           )}
         </div>
@@ -456,7 +681,23 @@ export default function EventView() {
             >
               <div className="flex-between" style={{ marginBottom: '20px' }}>
                 <h2 style={{ margin: 0 }}>Invite to Event</h2>
-                <button onClick={() => setShowInvite(false)} style={{ background: '#333', padding: '8px', width: '36px', height: '36px', borderRadius: '50%', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>X</button>
+                <button
+                  onClick={() => setShowInvite(false)}
+                  style={{
+                    background: '#333',
+                    width: '36px',
+                    height: '36px',
+                    padding: 0,
+                    borderRadius: '999px',
+                    color: 'white',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0
+                  }}
+                >
+                  <X size={20} />
+                </button>
               </div>
 
               {groupShareCode && (
@@ -473,15 +714,269 @@ export default function EventView() {
                 </div>
               )}
 
-              <button onClick={handleCopyInvite} style={{ background: '#00E5FF', color: 'black', padding: '12px', borderRadius: '12px', fontWeight: 700 }}>
+              <button onClick={() => handleCopyInvite({ closeAfter: true })} style={{ background: '#00E5FF', color: 'black', padding: '12px', borderRadius: '12px', fontWeight: 700 }}>
                 {inviteCopied ? <span style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}><Check size={16}/> Copied</span> : 'Copy Invite Link'}
               </button>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
+
+      <AnimatePresence>
+        {showDeleteConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{ position: 'fixed', inset: 0, zIndex: 2200, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(5px)' }}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.96, opacity: 0 }}
+              transition={{ type: 'spring', damping: 20, stiffness: 300 }}
+              style={{ width: '90%', maxWidth: '420px', background: '#1a1a2e', borderRadius: '20px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}
+            >
+              <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>Delete this event?</div>
+              <p className="text-sm" style={{ color: '#bbb', margin: 0 }}>This will remove the event and its nominations.</p>
+              <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+                <button onClick={() => setShowDeleteConfirm(false)} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', color: 'white', padding: '10px', borderRadius: '12px', fontWeight: 700 }}>
+                  Cancel
+                </button>
+                <button onClick={handleDeleteEvent} style={{ flex: 1, background: '#ff4d6d', color: 'white', padding: '10px', borderRadius: '12px', fontWeight: 700 }}>
+                  Delete
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showMapChoice && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{ position: 'fixed', inset: 0, zIndex: 2150, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(5px)' }}
+          >
+            <motion.div
+              initial={{ scale: 0.96, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.96, opacity: 0 }}
+              transition={{ type: 'spring', damping: 20, stiffness: 300 }}
+              style={{ width: '90%', maxWidth: '420px', background: '#1a1a2e', borderRadius: '20px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}
+            >
+              <div style={{ fontWeight: 700, fontSize: '1.05rem' }}>Open location in</div>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  onClick={() => {
+                    const query = encodeURIComponent(mapQuery)
+                    window.open(`https://maps.apple.com/?q=${query}`, '_blank')
+                    setShowMapChoice(false)
+                  }}
+                  style={{ flex: 1, background: 'rgba(255,255,255,0.08)', color: 'white', padding: '10px', borderRadius: '12px', fontWeight: 700 }}
+                >
+                  Apple Maps
+                </button>
+                <button
+                  onClick={() => {
+                    const query = encodeURIComponent(mapQuery)
+                    window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank')
+                    setShowMapChoice(false)
+                  }}
+                  style={{ flex: 1, background: '#00E5FF', color: 'black', padding: '10px', borderRadius: '12px', fontWeight: 700 }}
+                >
+                  Google Maps
+                </button>
+              </div>
+              <button onClick={() => setShowMapChoice(false)} style={{ background: 'transparent', color: '#9ca3af', padding: '6px', fontWeight: 600 }}>
+                Cancel
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <DateTimePickerSheet
+        show={showDateTimePicker}
+        onClose={() => setShowDateTimePicker(false)}
+        displayMonth={displayMonth}
+        setDisplayMonth={setDisplayMonth}
+        pickedDate={pickedDate}
+        setPickedDate={setPickedDate}
+        pickedTime={pickedTime}
+        setPickedTime={setPickedTime}
+        pickedPeriod={pickedPeriod}
+        setPickedPeriod={setPickedPeriod}
+        onConfirm={confirmDateTime}
+      />
     </div>
   )
+}
+
+function DateTimePickerSheet({
+  show,
+  onClose,
+  displayMonth,
+  setDisplayMonth,
+  pickedDate,
+  setPickedDate,
+  pickedTime,
+  setPickedTime,
+  pickedPeriod,
+  setPickedPeriod,
+  onConfirm
+}) {
+  if (!show) return null
+  const days = buildCalendarDays(displayMonth)
+  const monthLabel = displayMonth.toLocaleString([], { month: 'long', year: 'numeric' })
+  const timeSlots = getTimeSlots(30)
+  const today = new Date()
+  const isSameDay = (d1, d2) => d1 && d2 && d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate()
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 2100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(5px)' }}>
+      <div style={{ width: '100%', maxWidth: '500px', height: '80vh', background: '#1a1a2e', borderTopLeftRadius: '24px', borderTopRightRadius: '24px', padding: '20px', display: 'flex', flexDirection: 'column' }}>
+        <div className="flex-between" style={{ marginBottom: '12px' }}>
+          <h2 style={{ margin: 0 }}>Pick Date & Time</h2>
+          <button onClick={onClose} style={{ background: '#333', padding: '8px', borderRadius: '50%', color: 'white' }}>X</button>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+          <button
+            onClick={() => setDisplayMonth(new Date(displayMonth.getFullYear(), displayMonth.getMonth() - 1, 1))}
+            style={{ background: 'rgba(255,255,255,0.1)', color: 'white', padding: '6px 10px', borderRadius: '10px' }}
+          >
+            Prev
+          </button>
+          <div style={{ fontWeight: 700 }}>{monthLabel}</div>
+          <button
+            onClick={() => setDisplayMonth(new Date(displayMonth.getFullYear(), displayMonth.getMonth() + 1, 1))}
+            style={{ background: 'rgba(255,255,255,0.1)', color: 'white', padding: '6px 10px', borderRadius: '10px' }}
+          >
+            Next
+          </button>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px', marginBottom: '10px' }}>
+          {['S','M','T','W','T','F','S'].map(d => (
+            <div key={d} className="text-sm" style={{ textAlign: 'center' }}>{d}</div>
+          ))}
+          {days.map((day, idx) => {
+            if (!day) return <div key={`e-${idx}`} />
+            const dateObj = new Date(displayMonth.getFullYear(), displayMonth.getMonth(), day)
+            const selected = isSameDay(dateObj, pickedDate)
+            const isToday = isSameDay(dateObj, today)
+            return (
+              <button
+                key={`${displayMonth.getMonth()}-${day}`}
+                onClick={() => setPickedDate(dateObj)}
+                style={{
+                  padding: '8px 0',
+                  borderRadius: '10px',
+                  background: selected ? '#00E5FF' : 'rgba(255,255,255,0.08)',
+                  color: selected ? 'black' : 'white',
+                  border: isToday && !selected ? '1px solid #00E5FF' : 'none'
+                }}
+              >
+                {day}
+              </button>
+            )
+          })}
+        </div>
+
+        <div style={{ marginTop: '8px', marginBottom: '10px', fontWeight: 600 }}>Time</div>
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+          <button
+            onClick={() => setPickedPeriod('AM')}
+            style={{
+              flex: 1,
+              padding: '8px',
+              borderRadius: '12px',
+              background: pickedPeriod === 'AM' ? '#00E5FF' : 'rgba(255,255,255,0.08)',
+              color: pickedPeriod === 'AM' ? 'black' : 'white',
+              fontWeight: 600
+            }}
+          >
+            AM
+          </button>
+          <button
+            onClick={() => setPickedPeriod('PM')}
+            style={{
+              flex: 1,
+              padding: '8px',
+              borderRadius: '12px',
+              background: pickedPeriod === 'PM' ? '#00E5FF' : 'rgba(255,255,255,0.08)',
+              color: pickedPeriod === 'PM' ? 'black' : 'white',
+              fontWeight: 600
+            }}
+          >
+            PM
+          </button>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+          {timeSlots.map(t => {
+            const candidate = to24Time(t.hour, t.minute, pickedPeriod)
+            const isSelected = pickedTime === candidate
+            return (
+              <button
+                key={t.label}
+                onClick={() => setPickedTime(candidate)}
+                style={{
+                  padding: '10px 0',
+                  borderRadius: '10px',
+                  background: isSelected ? '#00E5FF' : 'rgba(255,255,255,0.08)',
+                  color: isSelected ? 'black' : 'white',
+                  fontWeight: 600
+                }}
+              >
+                {t.label}
+              </button>
+            )
+          })}
+        </div>
+
+        <button onClick={onConfirm} style={{ marginTop: '14px', background: '#00E5FF', color: 'black', padding: '12px', borderRadius: '999px', fontWeight: 700 }}>
+          Confirm Date & Time
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function getTimeSlots(stepMinutes = 30) {
+  const slots = []
+  for (let h = 1; h <= 12; h++) {
+    for (let m = 0; m < 60; m += stepMinutes) {
+      const label = `${h}:${String(m).padStart(2, '0')}`
+      slots.push({ hour: h, minute: m, label })
+    }
+  }
+  return slots
+}
+
+function to24Hour(hour12, period) {
+  if (period === 'AM') return hour12 === 12 ? 0 : hour12
+  return hour12 === 12 ? 12 : hour12 + 12
+}
+
+function to24Time(hour12, minute, period) {
+  const hour24 = to24Hour(hour12, period)
+  return `${String(hour24).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+}
+
+function buildCalendarDays(monthDate) {
+  const year = monthDate.getFullYear()
+  const month = monthDate.getMonth()
+  const firstDay = new Date(year, month, 1)
+  const startWeekday = firstDay.getDay()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+
+  const days = []
+  for (let i = 0; i < startWeekday; i++) days.push(null)
+  for (let d = 1; d <= daysInMonth; d++) days.push(d)
+  return days
 }
 
 // ------------------------------------------------------------------

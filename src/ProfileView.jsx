@@ -11,9 +11,23 @@ export default function ProfileView({ session }) {
   const [topGenre, setTopGenre] = useState('N/A')
   const [genreCount, setGenreCount] = useState(0)
   const [reviewHistory, setReviewHistory] = useState([])
+  const [profileDisplayName, setProfileDisplayName] = useState('')
+  const [editDisplayName, setEditDisplayName] = useState('')
+  const [isEditingDisplayName, setIsEditingDisplayName] = useState(false)
+  const [savingDisplayName, setSavingDisplayName] = useState(false)
+  const [displayNameError, setDisplayNameError] = useState('')
 
   useEffect(() => {
     if (session?.user) loadStats()
+  }, [session])
+
+  useEffect(() => {
+    if (!session?.user) return
+    const currentDisplayName = session.user.user_metadata?.display_name || ''
+    const fallbackName = session.user.user_metadata?.username || ''
+    const initialName = currentDisplayName || fallbackName || 'Movie Fan'
+    setProfileDisplayName(initialName)
+    setEditDisplayName(currentDisplayName || fallbackName)
   }, [session])
 
   async function loadStats() {
@@ -67,6 +81,49 @@ export default function ProfileView({ session }) {
     setLoading(false)
   }
 
+  async function handleDisplayNameSave() {
+    if (!session?.user) return
+    const rawDisplayName = editDisplayName.trim()
+    if (!rawDisplayName) {
+      setDisplayNameError('Display name cannot be empty.')
+      return
+    }
+
+    setSavingDisplayName(true)
+    setDisplayNameError('')
+
+    const { error: authError } = await supabase.auth.updateUser({
+      data: { display_name: rawDisplayName }
+    })
+
+    if (authError) {
+      setDisplayNameError(authError.message)
+      setSavingDisplayName(false)
+      return
+    }
+
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .update({ display_name: rawDisplayName })
+      .eq('id', session.user.id)
+
+    if (profileError) {
+      setDisplayNameError(profileError.message)
+      setSavingDisplayName(false)
+      return
+    }
+
+    setProfileDisplayName(rawDisplayName)
+    setIsEditingDisplayName(false)
+    setSavingDisplayName(false)
+  }
+
+  function handleDisplayNameCancel() {
+    setEditDisplayName(profileDisplayName === 'Movie Fan' ? '' : profileDisplayName)
+    setDisplayNameError('')
+    setIsEditingDisplayName(false)
+  }
+
   if (loading) return <div style={{ padding: '40px', textAlign: 'center' }}>Loading profile...</div>
 
   return (
@@ -82,7 +139,53 @@ export default function ProfileView({ session }) {
           <User size={26} color="#00E5FF" />
         </div>
         <div>
-          <h1 style={{ margin: 0, fontSize: '1.6rem' }}>{session.user.user_metadata.username || 'Movie Fan'}</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <h1 style={{ margin: 0, fontSize: '1.6rem' }}>{profileDisplayName || 'Movie Fan'}</h1>
+            {!isEditingDisplayName && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsEditingDisplayName(true)
+                  setDisplayNameError('')
+                }}
+                style={{ background: 'rgba(255,255,255,0.08)', color: '#fff', borderRadius: '999px', padding: '6px 12px', fontSize: '0.8rem', fontWeight: 600 }}
+              >
+                Edit display name
+              </button>
+            )}
+          </div>
+          {isEditingDisplayName && (
+            <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <input
+                type="text"
+                value={editDisplayName}
+                onChange={(e) => setEditDisplayName(e.target.value)}
+                placeholder="New display name"
+                style={{ background: 'rgba(255,255,255,0.05)', border: 'none', padding: '8px 12px', borderRadius: '10px', color: 'white' }}
+              />
+              <button
+                type="button"
+                onClick={handleDisplayNameSave}
+                disabled={savingDisplayName}
+                style={{ background: '#00E5FF', color: '#0b0b0b', borderRadius: '10px', padding: '8px 14px', fontWeight: 700 }}
+              >
+                {savingDisplayName ? 'Saving...' : 'Save'}
+              </button>
+              <button
+                type="button"
+                onClick={handleDisplayNameCancel}
+                disabled={savingDisplayName}
+                style={{ background: 'rgba(255,255,255,0.08)', color: '#fff', borderRadius: '10px', padding: '8px 12px', fontWeight: 600 }}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+          {displayNameError && (
+            <div className="text-sm" style={{ color: '#FF8FA3', marginTop: '6px' }}>
+              {displayNameError}
+            </div>
+          )}
           <div className="text-sm" style={{ color: '#aaa' }}>{session.user.email}</div>
         </div>
       </div>

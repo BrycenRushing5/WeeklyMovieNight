@@ -22,6 +22,7 @@ export default function GroupView({ session }) {
   const [showDateTimePicker, setShowDateTimePicker] = useState(false)
   const [pickedDate, setPickedDate] = useState(null)
   const [pickedTime, setPickedTime] = useState('')
+  const [pickedPeriod, setPickedPeriod] = useState('PM')
   const [displayMonth, setDisplayMonth] = useState(() => {
     const now = new Date()
     return new Date(now.getFullYear(), now.getMonth(), 1)
@@ -45,11 +46,11 @@ export default function GroupView({ session }) {
     // Join group_members with profiles to get usernames
     const { data } = await supabase
       .from('group_members')
-      .select('profiles(username)')
+      .select('profiles(display_name, username)')
       .eq('group_id', groupId)
     
     // Flatten data structure
-    setMembers(data.map(d => d.profiles.username))
+    setMembers(data.map(d => d.profiles?.display_name || d.profiles?.username || 'Movie Fan'))
   }
 
   async function getEvents() {
@@ -63,7 +64,7 @@ export default function GroupView({ session }) {
 
   async function createEvent() {
     if (!newEventTitle) return
-    const { error } = await supabase
+    const { data: createdEvent, error } = await supabase
       .from('events')
       .insert([{ 
         group_id: groupId, 
@@ -74,11 +75,19 @@ export default function GroupView({ session }) {
         voting_method: 'hearts',
         created_by: session.user.id
       }])
+      .select()
+      .single()
     
     if (!error) {
-      setNewEventTitle(''); setNewEventDate(''); setNewEventLocation('')
+      setNewEventTitle('')
+      setNewEventDate('')
+      setNewEventLocation('')
       setShowCreate(false)
-      getEvents()
+      if (createdEvent?.id) {
+        navigate(`/room/${createdEvent.id}`)
+      } else {
+        getEvents()
+      }
     }
   }
 
@@ -91,12 +100,16 @@ export default function GroupView({ session }) {
   function openDateTimePicker() {
     const existing = newEventDate ? new Date(newEventDate) : null
     const base = existing || new Date()
-    const roundedMinutes = Math.round(base.getMinutes() / 15) * 15
+    if (!existing) {
+      base.setHours(19, 0, 0, 0)
+    }
+    const roundedMinutes = Math.round(base.getMinutes() / 30) * 30
     base.setMinutes(roundedMinutes)
     base.setSeconds(0)
     base.setMilliseconds(0)
     setPickedDate(new Date(base.getFullYear(), base.getMonth(), base.getDate()))
     setPickedTime(`${String(base.getHours()).padStart(2, '0')}:${String(base.getMinutes()).padStart(2, '0')}`)
+    setPickedPeriod(base.getHours() >= 12 ? 'PM' : 'AM')
     setDisplayMonth(new Date(base.getFullYear(), base.getMonth(), 1))
     setShowDateTimePicker(true)
   }
@@ -170,17 +183,28 @@ export default function GroupView({ session }) {
             </button>
           </div>
         )}
+        <p className="text-sm" style={{ color: '#9ca3af', marginTop: '4px' }}>
+          A crew is your movie-night group. Share the join code or invite link to add friends.
+        </p>
         
         {/* MEMBERS & CODE ROW */}
         <div className="flex-between">
-           <div className="flex-gap text-sm" style={{ background: 'rgba(255,255,255,0.1)', padding: '6px 12px', borderRadius: '20px' }}>
-              <Users size={16} /> 
-              {members.length} Members: {members.slice(0, 3).join(', ')}{members.length > 3 && '...'}
+           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div className="flex-gap text-sm" style={{ background: 'rgba(255,255,255,0.1)', padding: '6px 12px', borderRadius: '20px' }}>
+                <Users size={16} /> 
+                {members.length} Members: {members.slice(0, 3).join(', ')}{members.length > 3 && '...'}
+              </div>
+              {group?.share_code && (
+                <div className="text-sm" style={{ color: '#9ca3af', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.14em' }}>Join code</span>
+                  <span style={{ fontWeight: 600, letterSpacing: '0.12em' }}>{group.share_code}</span>
+                </div>
+              )}
            </div>
            
            <button onClick={handleCopy} className="flex-gap" style={{ background: 'none', color: '#00E5FF' }}>
               {copied ? <Check size={18} /> : <Copy size={18} />} 
-              Invite Link
+              {copied ? 'Copied' : 'Invite Link'}
            </button>
         </div>
       </div>
@@ -192,6 +216,9 @@ export default function GroupView({ session }) {
             {showCreate ? 'Cancel' : '+ New Event'}
         </button>
       </div>
+      <p className="text-sm" style={{ color: '#9ca3af', marginBottom: '12px' }}>
+        Events are planned movie nights for this crew. Add nominations and vote to choose a winner.
+      </p>
 
       {/* UPDATE CREATE EVENT SECTION FOR CALENDAR */}
       {showCreate && (
@@ -207,8 +234,24 @@ export default function GroupView({ session }) {
                   {formatDateTimeLabel(newEventDate)}
                 </button>
             </div>
-            <input placeholder="Location" value={newEventLocation} onChange={(e) => setNewEventLocation(e.target.value)} />
-            <button onClick={createEvent} style={{ marginTop: '10px', background: 'var(--primary)', color: 'white' }}>Create Event</button>
+            <input placeholder="Location(Optional)" value={newEventLocation} onChange={(e) => setNewEventLocation(e.target.value)} />
+            <button
+              onClick={createEvent}
+              style={{
+                marginTop: '10px',
+                background: '#00E5FF',
+                color: 'black',
+                width: '100%',
+                padding: '12px',
+                borderRadius: '999px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontWeight: 700
+              }}
+            >
+              Create Event
+            </button>
         </div>
       )}
 
@@ -242,6 +285,8 @@ export default function GroupView({ session }) {
       setPickedDate={setPickedDate}
       pickedTime={pickedTime}
       setPickedTime={setPickedTime}
+      pickedPeriod={pickedPeriod}
+      setPickedPeriod={setPickedPeriod}
       onConfirm={confirmDateTime}
     />
     </>
@@ -257,12 +302,14 @@ function DateTimePickerSheet({
   setPickedDate,
   pickedTime,
   setPickedTime,
+  pickedPeriod,
+  setPickedPeriod,
   onConfirm
 }) {
   if (!show) return null
   const days = buildCalendarDays(displayMonth)
   const monthLabel = displayMonth.toLocaleString([], { month: 'long', year: 'numeric' })
-  const timeSlots = getTimeSlots()
+  const timeSlots = getTimeSlots(30)
   const today = new Date()
   const isSameDay = (d1, d2) => d1 && d2 && d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate()
 
@@ -318,25 +365,71 @@ function DateTimePickerSheet({
         </div>
 
         <div style={{ marginTop: '8px', marginBottom: '10px', fontWeight: 600 }}>Time</div>
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+          <button
+            onClick={() => setPickedPeriod('AM')}
+            style={{
+              flex: 1,
+              padding: '8px',
+              borderRadius: '12px',
+              background: pickedPeriod === 'AM' ? '#00E5FF' : 'rgba(255,255,255,0.08)',
+              color: pickedPeriod === 'AM' ? 'black' : 'white',
+              fontWeight: 600
+            }}
+          >
+            AM
+          </button>
+          <button
+            onClick={() => setPickedPeriod('PM')}
+            style={{
+              flex: 1,
+              padding: '8px',
+              borderRadius: '12px',
+              background: pickedPeriod === 'PM' ? '#00E5FF' : 'rgba(255,255,255,0.08)',
+              color: pickedPeriod === 'PM' ? 'black' : 'white',
+              fontWeight: 600
+            }}
+          >
+            PM
+          </button>
+        </div>
         <div style={{ flex: 1, overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-          {timeSlots.map(t => (
+          {timeSlots.map(t => {
+            const candidate = to24Time(t.hour, t.minute, pickedPeriod)
+            const isSelected = pickedTime === candidate
+            return (
             <button
-              key={t}
-              onClick={() => setPickedTime(t)}
+              key={t.label}
+              onClick={() => setPickedTime(candidate)}
               style={{
                 padding: '10px 0',
                 borderRadius: '10px',
-                background: pickedTime === t ? '#00E5FF' : 'rgba(255,255,255,0.08)',
-                color: pickedTime === t ? 'black' : 'white',
+                background: isSelected ? '#00E5FF' : 'rgba(255,255,255,0.08)',
+                color: isSelected ? 'black' : 'white',
                 fontWeight: 600
               }}
             >
-              {toDisplayTime(t)}
+              {t.label}
             </button>
-          ))}
+            )
+          })}
         </div>
 
-        <button onClick={onConfirm} style={{ marginTop: '14px', background: 'var(--primary)', color: 'white', padding: '12px', borderRadius: '12px' }}>
+        <button
+          onClick={onConfirm}
+          style={{
+            marginTop: '14px',
+            background: '#00E5FF',
+            color: 'black',
+            padding: '12px',
+            borderRadius: '999px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '100%',
+            fontWeight: 700
+          }}
+        >
           Confirm Date & Time
         </button>
       </div>
@@ -344,23 +437,25 @@ function DateTimePickerSheet({
   )
 }
 
-function getTimeSlots() {
+function getTimeSlots(stepMinutes = 30) {
   const slots = []
-  for (let h = 0; h < 24; h++) {
-    for (let m = 0; m < 60; m += 15) {
-      const hh = String(h).padStart(2, '0')
-      const mm = String(m).padStart(2, '0')
-      slots.push(`${hh}:${mm}`)
+  for (let h = 1; h <= 12; h++) {
+    for (let m = 0; m < 60; m += stepMinutes) {
+      const label = `${h}:${String(m).padStart(2, '0')}`
+      slots.push({ hour: h, minute: m, label })
     }
   }
   return slots
 }
 
-function toDisplayTime(time) {
-  const [h, m] = time.split(':').map(Number)
-  const period = h >= 12 ? 'PM' : 'AM'
-  const hour12 = h % 12 || 12
-  return `${hour12}:${String(m).padStart(2, '0')} ${period}`
+function to24Hour(hour12, period) {
+  if (period === 'AM') return hour12 === 12 ? 0 : hour12
+  return hour12 === 12 ? 12 : hour12 + 12
+}
+
+function to24Time(hour12, minute, period) {
+  const hour24 = to24Hour(hour12, period)
+  return `${String(hour24).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
 }
 
 function buildCalendarDays(monthDate) {

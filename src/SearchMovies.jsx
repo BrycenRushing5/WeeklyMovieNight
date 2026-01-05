@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion' 
-import { X, Search, Filter, Book, Ticket, Users } from 'lucide-react' 
+import { X, Search, Filter, Book, Ticket, Users, ChevronDown, ChevronUp, PenLine } from 'lucide-react' 
 import { supabase } from './supabaseClient'
 
-const GENRES = ['Action', 'Comedy', 'Drama', 'Fantasy', 'Horror', 'Romance', 'Sci-Fi', 'Thriller', 'Family']
+const DEFAULT_GENRES = ['Action', 'Comedy', 'Drama', 'Fantasy', 'Horror', 'Romance', 'Sci-Fi', 'Thriller', 'Family']
+const COMMON_GENRES = ['Action', 'Adventure', 'Comedy', 'Documentary', 'Holiday', 'Horror', 'Romance', 'Sci-Fi', 'Mystery & thriller', 'Fantasy']
 
 export default function SearchMovies({ eventId, groupId, onClose, onNominate, customAction }) {
   const isEventMode = !!eventId
@@ -11,6 +12,8 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
   const [searchTerm, setSearchTerm] = useState('')
   const [results, setResults] = useState([])
   const [watchlistScope, setWatchlistScope] = useState('mine')
+  const [genres, setGenres] = useState(DEFAULT_GENRES)
+  const searchRequestId = useRef(0)
   
   // Lists
   const [myWatchlist, setMyWatchlist] = useState([])
@@ -20,13 +23,28 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
   const [showFilters, setShowFilters] = useState(false)
   const [minScore, setMinScore] = useState(70)
   const [useScoreFilter, setUseScoreFilter] = useState(false)
-  const [genreFilter, setGenreFilter] = useState('')
+  const [genreFilters, setGenreFilters] = useState([])
+  const [showAllGenres, setShowAllGenres] = useState(false)
 
   // Write In
   const [isWritingIn, setIsWritingIn] = useState(false)
   const [newTitle, setNewTitle] = useState('')
-  const [newGenre, setNewGenre] = useState(GENRES[0])
+  const [newGenres, setNewGenres] = useState([])
+  const [newGenreOption, setNewGenreOption] = useState(DEFAULT_GENRES[0])
   const [newScore, setNewScore] = useState('')
+  const [newDescription, setNewDescription] = useState('')
+  const [theaterMovie, setTheaterMovie] = useState('')
+  const [theaterName, setTheaterName] = useState('')
+  const [theaterNotes, setTheaterNotes] = useState('')
+
+  const parsedWriteInScore = Number.parseInt(newScore, 10)
+  const writeInScoreColor = Number.isFinite(parsedWriteInScore)
+    ? parsedWriteInScore >= 80
+      ? '#4ade80'
+      : parsedWriteInScore >= 60
+        ? '#facc15'
+        : '#94a3b8'
+    : '#94a3b8'
 
   useEffect(() => {
     if (activeTab === 'search' && !isWritingIn) {
@@ -35,14 +53,42 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
     }
     if (activeTab === 'watchlist' && watchlistScope === 'mine') fetchMyWatchlist()
     if (activeTab === 'watchlist' && watchlistScope === 'crew') fetchCrewWatchlists()
-  }, [searchTerm, activeTab, watchlistScope, genreFilter, minScore, useScoreFilter, isWritingIn])
+  }, [searchTerm, activeTab, watchlistScope, genreFilters, minScore, useScoreFilter, isWritingIn])
+
+  useEffect(() => {
+    let isMounted = true
+    async function loadGenres() {
+      const { data, error } = await supabase.rpc('get_unique_genres')
+      if (error || !Array.isArray(data) || data.length === 0) return
+      const cleaned = data.filter(Boolean)
+      if (!isMounted || cleaned.length === 0) return
+      setGenres(cleaned)
+      setNewGenreOption(prev => (cleaned.includes(prev) ? prev : cleaned[0]))
+    }
+    loadGenres()
+    return () => { isMounted = false }
+  }, [])
 
   // 1. GLOBAL SEARCH
   async function searchMovies() {
-    let query = supabase.from('movies').select().limit(20)
-    if (searchTerm) query = query.ilike('title', `%${searchTerm}%`)
-    const { data } = await query
-    setResults(applyFilters(data || []))
+    const requestId = ++searchRequestId.current
+    let data = null
+    if (searchTerm) {
+      const { data: fuzzyData } = await supabase.rpc('search_movies_fuzzy', {
+        query: searchTerm,
+        limit_count: 20
+      })
+      data = fuzzyData
+    } else {
+      let query = supabase.from('movies').select()
+      if (genreFilters.length > 0) query = query.overlaps('genre', genreFilters)
+      if (useScoreFilter) query = query.or(`rt_score.gte.${minScore},rt_score.is.null`)
+      query = query.limit(20)
+      const { data: listData } = await query
+      data = listData
+    }
+    if (requestId !== searchRequestId.current) return
+    setResults(applyFilters(data || [], { skipSearchMatch: Boolean(searchTerm) }))
   }
 
   // 2. MY WATCHLIST
@@ -79,25 +125,55 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
     setCrewWatchlist(applyFilters(uniqueMovies))
   }
 
+  const sortedGenres = [...genres].sort((a, b) => a.localeCompare(b))
+  const commonGenres = COMMON_GENRES.filter(g => genres.includes(g))
+  const visibleGenres = showAllGenres ? sortedGenres : commonGenres
+
   // Helper: Apply Genre & Score Filters locally
-  function applyFilters(list) {
+  function applyFilters(list, options = {}) {
+    const { skipSearchMatch = false } = options
+    const normalizedTerm = normalizeText(searchTerm)
     return list.filter(m => {
         const score = m.rt_score === null ? 100 : m.rt_score // Treat null as 100
         const scorePass = !useScoreFilter || score >= minScore
-        const genrePass = !genreFilter || (m.genre && m.genre.includes(genreFilter))
-        const searchPass = !searchTerm || m.title.toLowerCase().includes(searchTerm.toLowerCase())
+        const movieGenres = Array.isArray(m.genre) ? m.genre : (m.genre ? [m.genre] : [])
+        const genrePass = genreFilters.length === 0 || genreFilters.some(g => movieGenres.includes(g))
+        const normalizedTitle = normalizeText(m.title)
+        const searchPass = skipSearchMatch || !searchTerm || normalizedTitle.includes(normalizedTerm)
         return scorePass && genrePass && searchPass
     })
   }
 
+  function normalizeText(value) {
+    return (value || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '')
+  }
+  
+  const toggleGenreFilter = (genre) => {
+    setGenreFilters(prev => prev.includes(genre) ? prev.filter(g => g !== genre) : [...prev, genre])
+  }
+
+  const clearGenreFilters = () => setGenreFilters([])
+
+  function buildTheaterDescription() {
+    const parts = []
+    if (theaterMovie.trim()) parts.push(`Movie: ${theaterMovie.trim()}`)
+    if (theaterName.trim()) parts.push(`Theater: ${theaterName.trim()}`)
+    if (theaterNotes.trim()) parts.push(`Notes: ${theaterNotes.trim()}`)
+    if (parts.length === 0) return 'Trip to the cinema'
+    return `Trip to the cinema • ${parts.join(' • ')}`
+  }
+
   async function handleWriteIn(isTheater = false) {
-    const titleToUse = isTheater ? (newTitle || "Movie Theater Trip") : newTitle
+    const titleToUse = isTheater ? (theaterMovie || "Movie Theater Trip") : newTitle
     if (!titleToUse) return alert("Title required!")
+    const genresToUse = newGenres.length > 0 ? newGenres : [newGenreOption]
 
     const { data: movie } = await supabase.from('movies').insert([{ 
         title: titleToUse, 
-        description: isTheater ? 'Trip to the cinema' : 'User Write-in', 
-        genre: isTheater ? ['Theater'] : [newGenre], 
+        description: isTheater ? buildTheaterDescription() : (newDescription.trim() || 'User Write-in'), 
+        genre: isTheater ? ['Theater'] : genresToUse, 
         rt_score: newScore ? parseInt(newScore) : null 
       }]).select().single()
 
@@ -116,7 +192,23 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
         
         <div className="flex-between" style={{ marginBottom: '20px' }}>
           <h2 style={{ margin: 0 }}>{isEventMode ? 'Nominate' : 'Add to Watchlist'}</h2>
-          <button onClick={onClose} style={{ background: '#333', padding: '8px', borderRadius: '50%', color: 'white' }}><X size={20} /></button>
+          <button
+            onClick={onClose}
+            style={{
+              background: '#333',
+              width: '36px',
+              height: '36px',
+              padding: 0,
+              borderRadius: '999px',
+              color: 'white',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }}
+          >
+            <X size={20} />
+          </button>
         </div>
 
         {/* TABS */}
@@ -124,24 +216,15 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
           <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', overflowX: 'auto', paddingBottom: '5px' }}>
               <TabButton active={activeTab === 'search'} onClick={() => {setActiveTab('search'); setIsWritingIn(false)}}><Search size={16}/> Search</TabButton>
               <TabButton active={activeTab === 'watchlist'} onClick={() => { setActiveTab('watchlist'); setIsWritingIn(false) }}><Book size={16}/> Watchlist</TabButton>
-              <TabButton active={activeTab === 'theater'} onClick={() => setActiveTab('theater')}><Ticket size={16}/> Out</TabButton>
+              <TabButton active={activeTab === 'writein'} onClick={() => { setActiveTab('writein'); setIsWritingIn(true) }}><PenLine size={16}/> Write In</TabButton>
+              <TabButton active={activeTab === 'theater'} onClick={() => { setActiveTab('theater'); setIsWritingIn(false) }}><Ticket size={16}/> Theatre</TabButton>
           </div>
         )}
 
         {!isEventMode && (
           <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
-            <button
-              onClick={() => { setActiveTab('search'); setIsWritingIn(false) }}
-              style={{ flex: 1, padding: '10px', borderRadius: '12px', background: !isWritingIn ? '#00E5FF' : 'rgba(255,255,255,0.1)', color: !isWritingIn ? 'black' : 'white', fontWeight: 700 }}
-            >
-              Search Database
-            </button>
-            <button
-              onClick={() => setIsWritingIn(true)}
-              style={{ flex: 1, padding: '10px', borderRadius: '12px', background: isWritingIn ? '#00E5FF' : 'rgba(255,255,255,0.1)', color: isWritingIn ? 'black' : 'white', fontWeight: 700 }}
-            >
-              Write In
-            </button>
+            <TabButton active={activeTab === 'search'} onClick={() => { setActiveTab('search'); setIsWritingIn(false) }}><Search size={16}/> Search</TabButton>
+            <TabButton active={activeTab === 'writein'} onClick={() => { setActiveTab('writein'); setIsWritingIn(true) }}><PenLine size={16}/> Write In</TabButton>
           </div>
         )}
 
@@ -157,17 +240,84 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                 </div>
                 {showFilters && (
                     <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #333' }}>
-                         <div className="flex-gap" style={{marginBottom:'10px'}}>
-                            <select value={genreFilter} onChange={(e) => setGenreFilter(e.target.value)} style={{padding:'8px', fontSize:'0.8rem'}}>
-                                <option value="">All Genres</option>
-                                {GENRES.map(g => <option key={g} value={g}>{g}</option>)}
-                            </select>
+                         <div style={{ marginBottom: '10px' }}>
+                            <div className="flex-gap" style={{ flexWrap: 'wrap' }}>
+                              {visibleGenres.map(g => (
+                                <button
+                                  key={g}
+                                  onClick={() => toggleGenreFilter(g)}
+                                  style={{
+                                    padding: '6px 10px',
+                                    borderRadius: '999px',
+                                    border: '1px solid #333',
+                                    background: genreFilters.includes(g) ? '#00E5FF' : 'rgba(255,255,255,0.08)',
+                                    color: genreFilters.includes(g) ? 'black' : 'white',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 600
+                                  }}
+                                >
+                                  {g}
+                                </button>
+                              ))}
+                            </div>
+                            {genres.length > 8 && (
+                              <button
+                                onClick={() => setShowAllGenres(prev => !prev)}
+                                style={{
+                                  marginTop: '8px',
+                                  background: 'transparent',
+                                  border: 'none',
+                                  color: '#9ca3af',
+                                  fontSize: '0.75rem',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '6px'
+                                }}
+                              >
+                                {showAllGenres ? 'See less' : 'See more'} {showAllGenres ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                              </button>
+                            )}
+                            {genreFilters.length > 0 && (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+                                {genreFilters.map(g => (
+                                  <button
+                                    key={g}
+                                    onClick={() => toggleGenreFilter(g)}
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '6px',
+                                      padding: '4px 8px',
+                                      borderRadius: '999px',
+                                      border: '1px solid rgba(0,229,255,0.4)',
+                                      background: 'rgba(0,229,255,0.12)',
+                                      color: '#00E5FF',
+                                      fontSize: '0.75rem'
+                                    }}
+                                  >
+                                    {g}
+                                    <X size={12} />
+                                  </button>
+                                ))}
+                                <button
+                                  onClick={clearGenreFilters}
+                                  style={{ padding: '4px 8px', borderRadius: '999px', border: '1px solid #333', background: 'transparent', color: '#9ca3af', fontSize: '0.75rem' }}
+                                >
+                                  Clear
+                                </button>
+                              </div>
+                            )}
                          </div>
                          <div className="flex-between">
-                            <span className="text-sm">Min Score {minScore}%</span>
+                            <span className="text-sm">Minimum Rotten Tomato Score</span>
                             <input className="toggle" type="checkbox" checked={useScoreFilter} onChange={(e) => setUseScoreFilter(e.target.checked)} />
                          </div>
-                         {useScoreFilter && <input type="range" value={minScore} onChange={(e) => setMinScore(Number(e.target.value))} />}
+                         {useScoreFilter && (
+                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                             <input type="range" value={minScore} onChange={(e) => setMinScore(Number(e.target.value))} style={{ flex: 1 }} />
+                             <span className="text-sm" style={{ minWidth: '48px', textAlign: 'right' }}>{minScore}%</span>
+                           </div>
+                         )}
                     </div>
                 )}
             </div>
@@ -200,7 +350,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
             {/* Empty States */}
             {activeTab === 'search' && !isWritingIn && isEventMode && (
               <div style={{ padding:'20px', textAlign:'center' }}>
-                <button onClick={() => setIsWritingIn(true)} style={{ background:'#00E5FF', color:'black', padding:'10px 20px', borderRadius:'20px', fontWeight: 700 }}>
+                <button onClick={() => { setIsWritingIn(true); setActiveTab('writein') }} style={{ background:'#00E5FF', color:'black', padding:'10px 20px', borderRadius:'20px', fontWeight: 700 }}>
                   + Write In Movie
                 </button>
               </div>
@@ -212,13 +362,74 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
             {/* Write In Form */}
             {isWritingIn && (
                  <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                    <input placeholder="Title" value={newTitle || searchTerm} onChange={(e) => setNewTitle(e.target.value)} />
-                    <div className="flex-gap">
-                        <select value={newGenre} onChange={(e) => setNewGenre(e.target.value)} style={{flex: 1}}>{GENRES.map(g => <option key={g} value={g}>{g}</option>)}</select>
-                        <input type="number" placeholder="RT Score" value={newScore} onChange={(e) => setNewScore(e.target.value)} style={{flex: 1}} />
+                    <div className="flex-gap" style={{ alignItems: 'center' }}>
+                      <input
+                        placeholder="Movie Title"
+                        value={newTitle || searchTerm}
+                        onChange={(e) => setNewTitle(e.target.value)}
+                        style={{ flex: 1, minWidth: 0 }}
+                      />
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'rgba(0,0,0,0.3)', borderRadius: '8px', padding: '4px 8px', border: `1px solid ${writeInScoreColor}`, color: writeInScoreColor, height: '32px' }}>
+                        <span role="img" aria-label="tomato" style={{ fontSize: '1.1rem' }}>🍅</span>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          value={newScore}
+                          onChange={(e) => setNewScore(e.target.value.replace(/[^0-9]/g, ''))}
+                          style={{ width: '24px', background: 'transparent', border: 'none', color: writeInScoreColor, textAlign: 'center', padding: 0 }}
+                        />
+                        <span style={{ fontWeight: 700 }}>%</span>
+                      </div>
+                    </div>
+                    <textarea
+                      placeholder="Write a description for the movie here!"
+                      value={newDescription}
+                      onChange={(e) => setNewDescription(e.target.value)}
+                      style={{ minHeight: '90px', resize: 'none' }}
+                    />
+                    <div className="flex-gap" style={{ alignItems: 'flex-start' }}>
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div className="text-sm" style={{ color: '#9ca3af' }}>Add what genres you think it hits!</div>
+                        <div className="flex-gap">
+                          <select value={newGenreOption} onChange={(e) => setNewGenreOption(e.target.value)} style={{ flex: 1, height: '52px', paddingRight: '64px' }}>
+                            {genres.map(g => <option key={g} value={g}>{g}</option>)}
+                          </select>
+                          <button
+                            onClick={() => setNewGenres(prev => prev.includes(newGenreOption) ? prev : [...prev, newGenreOption])}
+                            style={{ height: '36px', alignSelf: 'center', padding: '0 12px', borderRadius: '10px', background: 'rgba(255,255,255,0.1)', color: 'white', fontWeight: 700 }}
+                          >
+                            Add
+                          </button>
+                        </div>
+                        {newGenres.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                            {newGenres.map(g => (
+                              <button
+                                key={g}
+                                onClick={() => setNewGenres(prev => prev.filter(item => item !== g))}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  padding: '6px 10px',
+                                  borderRadius: '999px',
+                                  border: '1px solid rgba(0,229,255,0.4)',
+                                  background: 'rgba(0,229,255,0.12)',
+                                  color: '#00E5FF',
+                                  fontSize: '0.75rem'
+                                }}
+                              >
+                                {g}
+                                <X size={12} />
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                     <button onClick={() => handleWriteIn(false)} style={{ background: '#00E5FF', color: 'black', padding: '15px', borderRadius: '12px' }}>Save & Select</button>
-                    <button onClick={() => setIsWritingIn(false)} className="text-sm" style={{background:'none'}}>Cancel</button>
+                    <button onClick={() => { setIsWritingIn(false); setActiveTab('search') }} className="text-sm" style={{background:'none'}}>Cancel</button>
                  </div>
             )}
 
@@ -227,7 +438,11 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                 <div style={{ textAlign: 'center', marginTop: '20px' }}>
                     <Ticket size={48} color="gold" style={{marginBottom:'10px'}}/>
                     <h3 style={{color:'gold'}}>Let's Go Out</h3>
-                    <input placeholder="Specific Movie (Optional)" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} style={{marginTop:'20px'}} />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '20px' }}>
+                      <input placeholder="Movie Selection (Optional)" value={theaterMovie} onChange={(e) => setTheaterMovie(e.target.value)} />
+                      <input placeholder="Theater (Optional)" value={theaterName} onChange={(e) => setTheaterName(e.target.value)} />
+                      <textarea placeholder="Description (Optional)" value={theaterNotes} onChange={(e) => setTheaterNotes(e.target.value)} style={{ minHeight: '90px', resize: 'none' }} />
+                    </div>
                     <button onClick={() => handleWriteIn(true)} style={{ background: 'gold', color: 'black', width: '100%', padding: '15px', borderRadius: '12px', marginTop: '15px' }}>Nominate Trip</button>
                 </div>
             )}
@@ -243,6 +458,7 @@ function TabButton({ active, children, onClick }) {
 
 function MovieRow({ movie, onSelect }) {
     const description = movie.description?.trim()
+    const scoreColor = movie.rt_score >= 80 ? '#4ade80' : movie.rt_score >= 60 ? '#facc15' : '#94a3b8'
     return (
       <div onClick={onSelect} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', marginBottom: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', cursor: 'pointer', gap: '12px' }}>
         <div style={{ flex: 1 }}>
@@ -254,7 +470,20 @@ function MovieRow({ movie, onSelect }) {
             </div>
           )}
         </div>
-        {movie.rt_score && <span className="tag">🍅 {movie.rt_score}%</span>}
+        {movie.rt_score !== null && movie.rt_score !== undefined && (
+          <span
+            style={{
+              border: `1px solid ${scoreColor}`,
+              color: scoreColor,
+              padding: '4px 8px',
+              borderRadius: '10px',
+              fontSize: '0.8rem',
+              fontWeight: 600
+            }}
+          >
+            🍅 {movie.rt_score}%
+          </span>
+        )}
       </div>
     )
 }

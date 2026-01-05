@@ -1,18 +1,20 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { LogOut, Plus, Users, Book, Search, Filter, Calendar, Clock, Link as LinkIcon, User } from 'lucide-react'
+import { LogOut, Plus, Users, Book, Search, Filter, Calendar, Clock, User, ChevronDown, ChevronUp, X } from 'lucide-react'
 import { supabase } from './supabaseClient'
 import SearchMovies from './SearchMovies'
 import MovieCard from './MovieCard'
 
-const GENRES = ['Action', 'Comedy', 'Drama', 'Fantasy', 'Horror', 'Romance', 'Sci-Fi', 'Thriller', 'Family']
+const DEFAULT_GENRES = ['Action', 'Comedy', 'Drama', 'Fantasy', 'Horror', 'Romance', 'Sci-Fi', 'Thriller', 'Family']
+const COMMON_GENRES = ['Action', 'Adventure', 'Comedy', 'Documentary', 'Holiday', 'Horror', 'Romance', 'Sci-Fi', 'Mystery & thriller', 'Fantasy']
 
 export default function Dashboard({ session }) {
   const [groups, setGroups] = useState([])
   const [watchlist, setWatchlist] = useState([])
   const [activeTab, setActiveTab] = useState('events') 
   const [showSearch, setShowSearch] = useState(false)
+  const [genres, setGenres] = useState(DEFAULT_GENRES)
   const [showCreateGroup, setShowCreateGroup] = useState(false) // New Modal
   const [newGroupName, setNewGroupName] = useState('')
   const [showJoinGroup, setShowJoinGroup] = useState(false)
@@ -28,17 +30,18 @@ export default function Dashboard({ session }) {
   const [showDateTimePicker, setShowDateTimePicker] = useState(false)
   const [pickedDate, setPickedDate] = useState(null)
   const [pickedTime, setPickedTime] = useState('')
+  const [pickedPeriod, setPickedPeriod] = useState('PM')
   const [displayMonth, setDisplayMonth] = useState(() => {
     const now = new Date()
     return new Date(now.getFullYear(), now.getMonth(), 1)
   })
-  const [lastInviteLink, setLastInviteLink] = useState('')
-  const [inviteCopied, setInviteCopied] = useState(false)
+  const navigate = useNavigate()
   
   // Watchlist Local Search
   const [watchFilter, setWatchFilter] = useState('')
   const [showWatchFilters, setShowWatchFilters] = useState(false)
-  const [watchGenre, setWatchGenre] = useState('')
+  const [watchGenres, setWatchGenres] = useState([])
+  const [showAllGenres, setShowAllGenres] = useState(false)
   const [watchMinScore, setWatchMinScore] = useState(70)
   const [useWatchScore, setUseWatchScore] = useState(false)
 
@@ -49,10 +52,23 @@ export default function Dashboard({ session }) {
     getMyWatchlist()
   }, [])
 
+  useEffect(() => {
+    let isMounted = true
+    async function loadGenres() {
+      const { data, error } = await supabase.rpc('get_unique_genres')
+      if (error || !Array.isArray(data) || data.length === 0) return
+      const cleaned = data.filter(Boolean)
+      if (!isMounted || cleaned.length === 0) return
+      setGenres(cleaned)
+    }
+    loadGenres()
+    return () => { isMounted = false }
+  }, [])
+
   async function getMyGroups() {
     const { data } = await supabase
       .from('group_members')
-      .select('group:groups (id, name, share_code), profiles(username)')
+      .select('group:groups (id, name, share_code), profiles(display_name, username)')
       .eq('user_id', session.user.id)
     if (data) {
       const groupList = data.map(item => item.group)
@@ -67,12 +83,12 @@ export default function Dashboard({ session }) {
   async function getGroupMemberPreview(groupIds) {
     const { data } = await supabase
       .from('group_members')
-      .select('group_id, profiles(username)')
+      .select('group_id, profiles(display_name, username)')
       .in('group_id', groupIds)
     if (!data) return
     const grouped = {}
     data.forEach(item => {
-      const name = item.profiles?.username
+      const name = item.profiles?.display_name || item.profiles?.username || 'Movie Fan'
       if (!grouped[item.group_id]) grouped[item.group_id] = []
       if (name && grouped[item.group_id].length < 3) grouped[item.group_id].push(name)
     })
@@ -183,10 +199,8 @@ export default function Dashboard({ session }) {
       setNewEventLocation('')
       setShowCreateEvent(false)
       if (createdEvent?.id) {
-        setLastInviteLink(`${window.location.origin}/room/${createdEvent.id}`)
-      }
-      if (createdEvent?.id) {
         setEvents(prev => (prev.find(e => e.id === createdEvent.id) ? prev : [createdEvent, ...prev]))
+        navigate(`/room/${createdEvent.id}`)
       }
       getMyGroups()
     }
@@ -201,12 +215,16 @@ export default function Dashboard({ session }) {
   function openDateTimePicker() {
     const existing = newEventDate ? new Date(newEventDate) : null
     const base = existing || new Date()
-    const roundedMinutes = Math.round(base.getMinutes() / 15) * 15
+    if (!existing) {
+      base.setHours(19, 0, 0, 0)
+    }
+    const roundedMinutes = Math.round(base.getMinutes() / 30) * 30
     base.setMinutes(roundedMinutes)
     base.setSeconds(0)
     base.setMilliseconds(0)
     setPickedDate(new Date(base.getFullYear(), base.getMonth(), base.getDate()))
     setPickedTime(`${String(base.getHours()).padStart(2, '0')}:${String(base.getMinutes()).padStart(2, '0')}`)
+    setPickedPeriod(base.getHours() >= 12 ? 'PM' : 'AM')
     setDisplayMonth(new Date(base.getFullYear(), base.getMonth(), 1))
     setShowDateTimePicker(true)
   }
@@ -217,13 +235,6 @@ export default function Dashboard({ session }) {
     const composed = new Date(pickedDate.getFullYear(), pickedDate.getMonth(), pickedDate.getDate(), hh, mm, 0, 0)
     setNewEventDate(composed.toISOString())
     setShowDateTimePicker(false)
-  }
-
-  function handleCopyInvite() {
-    if (!lastInviteLink) return
-    navigator.clipboard.writeText(lastInviteLink)
-    setInviteCopied(true)
-    setTimeout(() => setInviteCopied(false), 2000)
   }
 
   async function joinGroupByCode() {
@@ -254,11 +265,19 @@ export default function Dashboard({ session }) {
   // Filter watchlist logic
   const filteredWatchlist = watchlist.filter(m => {
     const titlePass = m.title.toLowerCase().includes(watchFilter.toLowerCase())
-    const genrePass = !watchGenre || (m.genre && m.genre.includes(watchGenre))
+    const movieGenres = Array.isArray(m.genre) ? m.genre : (m.genre ? [m.genre] : [])
+    const genrePass = watchGenres.length === 0 || watchGenres.some(g => movieGenres.includes(g))
     const score = m.rt_score === null ? 100 : m.rt_score
     const scorePass = !useWatchScore || score >= watchMinScore
     return titlePass && genrePass && scorePass
   })
+  const toggleWatchGenre = (genre) => {
+    setWatchGenres(prev => prev.includes(genre) ? prev.filter(g => g !== genre) : [...prev, genre])
+  }
+  const clearWatchGenres = () => setWatchGenres([])
+  const sortedGenres = [...genres].sort((a, b) => a.localeCompare(b))
+  const commonGenres = COMMON_GENRES.filter(g => genres.includes(g))
+  const visibleGenres = showAllGenres ? sortedGenres : commonGenres
   const groupNameById = Object.fromEntries(groups.map(g => [g.id, g.name]))
 
   return (
@@ -299,6 +318,9 @@ export default function Dashboard({ session }) {
       <AnimatePresence mode="wait">
         {activeTab === 'groups' ? (
           <motion.div key="groups" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
+             <p className="text-sm" style={{ color: '#9ca3af', marginBottom: '14px' }}>
+               Crews are your movie-night groups. Share a join code to bring friends in.
+             </p>
              
              {/* NEW CREW BUTTON */}
              <button onClick={() => setShowCreateGroup(!showCreateGroup)} style={{ width: '100%', marginBottom: '15px', background: 'var(--primary)', color: 'white', padding: '12px', borderRadius: '12px' }}>
@@ -308,7 +330,23 @@ export default function Dashboard({ session }) {
              {showCreateGroup && (
                 <div className="glass-panel" style={{ marginBottom: '20px' }}>
                     <input autoFocus placeholder="Crew Name (e.g. Action Buffs)" value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)} />
-                    <button onClick={createGroup} style={{ marginTop: '10px', background: '#00E5FF', color: 'black' }}>Create</button>
+                    <button
+                      onClick={createGroup}
+                      style={{
+                        marginTop: '10px',
+                        background: '#00E5FF',
+                        color: 'black',
+                        width: '100%',
+                        padding: '12px',
+                        borderRadius: '999px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 700
+                      }}
+                    >
+                      Create
+                    </button>
                 </div>
              )}
 
@@ -320,7 +358,23 @@ export default function Dashboard({ session }) {
              {showJoinGroup && (
                 <div className="glass-panel" style={{ marginBottom: '20px' }}>
                     <input placeholder="Enter invite code" value={joinCode} onChange={(e) => setJoinCode(e.target.value)} />
-                    <button onClick={joinGroupByCode} style={{ marginTop: '10px', background: '#00E5FF', color: 'black' }}>Join</button>
+                    <button
+                      onClick={joinGroupByCode}
+                      style={{
+                        marginTop: '10px',
+                        background: '#00E5FF',
+                        color: 'black',
+                        width: '100%',
+                        padding: '12px',
+                        borderRadius: '999px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 700
+                      }}
+                    >
+                      Join
+                    </button>
                 </div>
              )}
 
@@ -342,6 +396,9 @@ export default function Dashboard({ session }) {
           </motion.div>
         ) : activeTab === 'events' ? (
           <motion.div key="events" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
+            <p className="text-sm" style={{ color: '#9ca3af', marginBottom: '14px' }}>
+              Events are planned movie nights. Add nominations, then vote to pick what to watch.
+            </p>
             <button onClick={() => setShowCreateEvent(!showCreateEvent)} style={{ width: '100%', marginBottom: '15px', background: 'var(--primary)', color: 'white', padding: '12px', borderRadius: '12px' }}>
               {showCreateEvent ? 'Cancel' : '+ New Event'}
             </button>
@@ -357,20 +414,23 @@ export default function Dashboard({ session }) {
                   <Clock size={16} />
                   {formatDateTimeLabel(newEventDate)}
                 </button>
-                <input placeholder="Location" value={newEventLocation} onChange={(e) => setNewEventLocation(e.target.value)} />
-                <button onClick={createEventFromDashboard} style={{ marginTop: '10px', background: '#00E5FF', color: 'black' }}>Create Event</button>
-              </div>
-            )}
-
-            {lastInviteLink && (
-              <div className="glass-panel" style={{ marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center' }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700 }}>Invite Link Ready</div>
-                  <div className="text-sm">Share it to bring people into this event.</div>
-                </div>
-                <button onClick={handleCopyInvite} style={{ background: 'rgba(255,255,255,0.1)', color: 'white', padding: '10px 12px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <LinkIcon size={16} />
-                  {inviteCopied ? 'Copied' : 'Copy'}
+                <input placeholder="Location(Optional)" value={newEventLocation} onChange={(e) => setNewEventLocation(e.target.value)} />
+                <button
+                  onClick={createEventFromDashboard}
+                  style={{
+                    marginTop: '10px',
+                    background: '#00E5FF',
+                    color: 'black',
+                    width: '100%',
+                    padding: '12px',
+                    borderRadius: '999px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 700
+                  }}
+                >
+                  Create Event
                 </button>
               </div>
             )}
@@ -402,6 +462,9 @@ export default function Dashboard({ session }) {
           </motion.div>
         ) : (
           <motion.div key="watchlist" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+              <p className="text-sm" style={{ color: '#9ca3af', marginBottom: '12px' }}>
+                Your watchlist is a personal queue you can nominate from later.
+              </p>
               
               {/* WATCHLIST ACTION BAR */}
               <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
@@ -409,28 +472,92 @@ export default function Dashboard({ session }) {
                       <Search size={16} style={{ position: 'absolute', left: 12, top: 14, color: '#888' }} />
                       <input placeholder="Filter your list..." value={watchFilter} onChange={(e) => setWatchFilter(e.target.value)} style={{ paddingLeft: '35px' }} />
                   </div>
-                  <button onClick={() => setShowWatchFilters(!showWatchFilters)} style={{ width: 'auto', background: 'rgba(255,255,255,0.08)', color: 'white', padding: '0 14px', borderRadius: '12px' }}>
-                    <Filter size={18} color={showWatchFilters ? '#00E5FF' : 'white'} />
+                  <button onClick={() => setShowWatchFilters(!showWatchFilters)} style={{ width: 'auto', background: 'rgba(255,255,255,0.08)', color: 'white', padding: '0 12px', borderRadius: '10px', height: '44px' }}>
+                    <Filter size={16} color={showWatchFilters ? '#00E5FF' : 'white'} />
                   </button>
-                  <button onClick={() => setShowSearch(true)} style={{ width: 'auto', background: '#00E5FF', color: 'black', padding: '0 20px', borderRadius: '12px' }}>
-                    <Plus size={20} />
+                  <button onClick={() => setShowSearch(true)} style={{ width: 'auto', background: '#00E5FF', color: 'black', padding: '0 12px', borderRadius: '10px', height: '44px' }}>
+                    <Plus size={18} />
                   </button>
               </div>
 
               {showWatchFilters && (
                 <div style={{ marginBottom: '16px', padding: '12px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px' }}>
-                  <div className="flex-gap" style={{ marginBottom: '10px' }}>
-                    <select value={watchGenre} onChange={(e) => setWatchGenre(e.target.value)} style={{ padding: '8px', fontSize: '0.85rem', flex: 1 }}>
-                      <option value="">All Genres</option>
-                      {GENRES.map(g => <option key={g} value={g}>{g}</option>)}
-                    </select>
+                  <div style={{ marginBottom: '10px' }}>
+                    <div className="flex-gap" style={{ flexWrap: 'wrap' }}>
+                      {visibleGenres.map(g => (
+                        <button
+                          key={g}
+                          onClick={() => toggleWatchGenre(g)}
+                          style={{
+                            padding: '6px 10px',
+                            borderRadius: '999px',
+                            border: '1px solid #333',
+                            background: watchGenres.includes(g) ? '#00E5FF' : 'rgba(255,255,255,0.08)',
+                            color: watchGenres.includes(g) ? 'black' : 'white',
+                            fontSize: '0.75rem',
+                            fontWeight: 600
+                          }}
+                        >
+                          {g}
+                        </button>
+                      ))}
+                    </div>
+                    {genres.length > 8 && (
+                      <button
+                        onClick={() => setShowAllGenres(prev => !prev)}
+                        style={{
+                          marginTop: '8px',
+                          background: 'transparent',
+                          border: 'none',
+                          color: '#9ca3af',
+                          fontSize: '0.75rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px'
+                        }}
+                      >
+                        {showAllGenres ? 'See less' : 'See more'} {showAllGenres ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                      </button>
+                    )}
+                    {watchGenres.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+                        {watchGenres.map(g => (
+                          <button
+                            key={g}
+                            onClick={() => toggleWatchGenre(g)}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              padding: '4px 8px',
+                              borderRadius: '999px',
+                              border: '1px solid rgba(0,229,255,0.4)',
+                              background: 'rgba(0,229,255,0.12)',
+                              color: '#00E5FF',
+                              fontSize: '0.75rem'
+                            }}
+                          >
+                            {g} <span style={{ fontWeight: 700 }}>x</span>
+                          </button>
+                        ))}
+                        <button
+                          onClick={clearWatchGenres}
+                          style={{ padding: '4px 8px', borderRadius: '999px', border: '1px solid #333', background: 'transparent', color: '#9ca3af', fontSize: '0.75rem' }}
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <div className="flex-between">
-                    <span className="text-sm">Min Score {watchMinScore}%</span>
+                    <span className="text-sm">Minimum Rotten Tomato Score</span>
                     <input className="toggle" type="checkbox" checked={useWatchScore} onChange={(e) => setUseWatchScore(e.target.checked)} />
                   </div>
                   {useWatchScore && (
-                    <input type="range" value={watchMinScore} onChange={(e) => setWatchMinScore(Number(e.target.value))} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <input type="range" value={watchMinScore} onChange={(e) => setWatchMinScore(Number(e.target.value))} style={{ flex: 1 }} />
+                      <span className="text-sm" style={{ minWidth: '48px', textAlign: 'right' }}>{watchMinScore}%</span>
+                    </div>
                   )}
                 </div>
               )}
@@ -480,7 +607,23 @@ export default function Dashboard({ session }) {
             >
               <div className="flex-between" style={{ marginBottom: '20px' }}>
                 <h2 style={{ margin: 0 }}>Nominate to Event</h2>
-                <button onClick={() => { setShowNominate(false); setNominateMovie(null) }} style={{ background: '#333', padding: '8px', borderRadius: '50%', color: 'white' }}>X</button>
+                <button
+                  onClick={() => { setShowNominate(false); setNominateMovie(null) }}
+                  style={{
+                    background: '#333',
+                    width: '36px',
+                    height: '36px',
+                    padding: 0,
+                    borderRadius: '999px',
+                    color: 'white',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0
+                  }}
+                >
+                  <X size={20} />
+                </button>
               </div>
 
               {events.length === 0 && (
@@ -516,6 +659,8 @@ export default function Dashboard({ session }) {
         setPickedDate={setPickedDate}
         pickedTime={pickedTime}
         setPickedTime={setPickedTime}
+        pickedPeriod={pickedPeriod}
+        setPickedPeriod={setPickedPeriod}
         onConfirm={confirmDateTime}
       />
     </div>
@@ -531,12 +676,14 @@ function DateTimePickerSheet({
   setPickedDate,
   pickedTime,
   setPickedTime,
+  pickedPeriod,
+  setPickedPeriod,
   onConfirm
 }) {
   if (!show) return null
   const days = buildCalendarDays(displayMonth)
   const monthLabel = displayMonth.toLocaleString([], { month: 'long', year: 'numeric' })
-  const timeSlots = getTimeSlots()
+  const timeSlots = getTimeSlots(30)
   const today = new Date()
   const isSameDay = (d1, d2) => d1 && d2 && d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate()
 
@@ -592,25 +739,71 @@ function DateTimePickerSheet({
         </div>
 
         <div style={{ marginTop: '8px', marginBottom: '10px', fontWeight: 600 }}>Time</div>
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+          <button
+            onClick={() => setPickedPeriod('AM')}
+            style={{
+              flex: 1,
+              padding: '8px',
+              borderRadius: '12px',
+              background: pickedPeriod === 'AM' ? '#00E5FF' : 'rgba(255,255,255,0.08)',
+              color: pickedPeriod === 'AM' ? 'black' : 'white',
+              fontWeight: 600
+            }}
+          >
+            AM
+          </button>
+          <button
+            onClick={() => setPickedPeriod('PM')}
+            style={{
+              flex: 1,
+              padding: '8px',
+              borderRadius: '12px',
+              background: pickedPeriod === 'PM' ? '#00E5FF' : 'rgba(255,255,255,0.08)',
+              color: pickedPeriod === 'PM' ? 'black' : 'white',
+              fontWeight: 600
+            }}
+          >
+            PM
+          </button>
+        </div>
         <div style={{ flex: 1, overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-          {timeSlots.map(t => (
+          {timeSlots.map(t => {
+            const candidate = to24Time(t.hour, t.minute, pickedPeriod)
+            const isSelected = pickedTime === candidate
+            return (
             <button
-              key={t}
-              onClick={() => setPickedTime(t)}
+              key={t.label}
+              onClick={() => setPickedTime(candidate)}
               style={{
                 padding: '10px 0',
                 borderRadius: '10px',
-                background: pickedTime === t ? '#00E5FF' : 'rgba(255,255,255,0.08)',
-                color: pickedTime === t ? 'black' : 'white',
+                background: isSelected ? '#00E5FF' : 'rgba(255,255,255,0.08)',
+                color: isSelected ? 'black' : 'white',
                 fontWeight: 600
               }}
             >
-              {toDisplayTime(t)}
+              {t.label}
             </button>
-          ))}
+            )
+          })}
         </div>
 
-        <button onClick={onConfirm} style={{ marginTop: '14px', background: 'var(--primary)', color: 'white', padding: '12px', borderRadius: '12px' }}>
+        <button
+          onClick={onConfirm}
+          style={{
+            marginTop: '14px',
+            background: '#00E5FF',
+            color: 'black',
+            padding: '12px',
+            borderRadius: '999px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '100%',
+            fontWeight: 700
+          }}
+        >
           Confirm Date & Time
         </button>
       </div>
@@ -618,23 +811,25 @@ function DateTimePickerSheet({
   )
 }
 
-function getTimeSlots() {
+function getTimeSlots(stepMinutes = 30) {
   const slots = []
-  for (let h = 0; h < 24; h++) {
-    for (let m = 0; m < 60; m += 15) {
-      const hh = String(h).padStart(2, '0')
-      const mm = String(m).padStart(2, '0')
-      slots.push(`${hh}:${mm}`)
+  for (let h = 1; h <= 12; h++) {
+    for (let m = 0; m < 60; m += stepMinutes) {
+      const label = `${h}:${String(m).padStart(2, '0')}`
+      slots.push({ hour: h, minute: m, label })
     }
   }
   return slots
 }
 
-function toDisplayTime(time) {
-  const [h, m] = time.split(':').map(Number)
-  const period = h >= 12 ? 'PM' : 'AM'
-  const hour12 = h % 12 || 12
-  return `${hour12}:${String(m).padStart(2, '0')} ${period}`
+function to24Hour(hour12, period) {
+  if (period === 'AM') return hour12 === 12 ? 0 : hour12
+  return hour12 === 12 ? 12 : hour12 + 12
+}
+
+function to24Time(hour12, minute, period) {
+  const hour24 = to24Hour(hour12, period)
+  return `${String(hour24).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
 }
 
 function buildCalendarDays(monthDate) {

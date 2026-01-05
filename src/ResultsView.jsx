@@ -14,6 +14,7 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
   const [randomPick, setRandomPick] = useState(null)
   const [activeMovie, setActiveMovie] = useState(null)
   const [spinTick, setSpinTick] = useState(0)
+  const hasNominations = movies.length > 0
   
   useEffect(() => {
     calculateResults()
@@ -28,7 +29,7 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
 
   async function calculateResults() {
     const { data: nominations } = await supabase.from('nominations').select('id, movie:movies (*)').eq('event_id', eventId)
-    const { data: votes } = await supabase.from('votes').select('movie_id, vote_type, profiles(username)').eq('event_id', eventId)
+    const { data: votes } = await supabase.from('votes').select('movie_id, vote_type, profiles(display_name, username)').eq('event_id', eventId)
     const nominationList = nominations || []
     const voteList = votes || []
 
@@ -48,7 +49,7 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
         },
         vote_details: movieVotes.map(v => ({
           type: v.vote_type,
-          username: v.profiles?.username || 'Movie Fan'
+          username: v.profiles?.display_name || v.profiles?.username || 'Movie Fan'
         }))
       }
     })
@@ -56,7 +57,7 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
   }
 
   async function selectMovie(movieId) {
-    if (!movieId) return
+    if (!movieId || !hasNominations) return
     setSelectingId(movieId)
     const { error } = await supabase
       .from('events')
@@ -147,10 +148,11 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
 
             {method === 'random' && (
                 <motion.button
-                  onClick={handleRandomPick}
+                  onClick={() => hasNominations && handleRandomPick()}
+                  disabled={!hasNominations}
                   whileTap={{ scale: 0.98 }}
                   whileHover={{ scale: 1.01 }}
-                  style={{ marginTop: '15px', background: 'gold', color: 'black', width: '100%', padding: '15px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}
+                  style={{ marginTop: '15px', background: hasNominations ? 'gold' : 'rgba(255,255,255,0.08)', color: hasNominations ? 'black' : '#94a3b8', width: '100%', padding: '15px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', cursor: hasNominations ? 'pointer' : 'not-allowed' }}
                 >
                     <motion.span
                       key={spinTick}
@@ -165,11 +167,22 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
                 </motion.button>
             )}
             {method !== 'random' && (
-                <button onClick={() => setRevealResults(true)} style={{ marginTop: '15px', background: '#00E5FF', color: 'black', width: '100%', padding: '14px', borderRadius: '12px', fontWeight: 700 }}>
+                <button
+                  onClick={() => hasNominations && setRevealResults(true)}
+                  disabled={!hasNominations}
+                  style={{ marginTop: '15px', background: hasNominations ? '#00E5FF' : 'rgba(255,255,255,0.08)', color: hasNominations ? 'black' : '#94a3b8', width: '100%', padding: '14px', borderRadius: '12px', fontWeight: 700, cursor: hasNominations ? 'pointer' : 'not-allowed' }}
+                >
                     Reveal Results
                 </button>
             )}
         </div>
+
+        {!hasNominations && (
+          <div className="glass-panel" style={{ marginBottom: '20px', textAlign: 'center' }}>
+            <div style={{ fontWeight: 700, marginBottom: '6px' }}>No nominations yet</div>
+            <div className="text-sm" style={{ color: '#9ca3af' }}>Add nominations to enable selection.</div>
+          </div>
+        )}
 
         {/* LEADERBOARD */}
         {method === 'random' && randomPick && (

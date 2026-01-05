@@ -57,11 +57,9 @@ export default function Dashboard({ session }) {
     if (data) {
       const groupList = data.map(item => item.group)
       setGroups(groupList)
+      getMyEvents(groupList.map(g => g.id))
       if (groupList.length > 0) {
-        getMyEvents(groupList.map(g => g.id))
         getGroupMemberPreview(groupList.map(g => g.id))
-      } else {
-        setEvents([])
       }
     }
   }
@@ -89,7 +87,7 @@ export default function Dashboard({ session }) {
     ].filter(Boolean).join(',')
     const { data } = await supabase
       .from('events')
-      .select('id, title, event_date, group_id')
+      .select('id, title, event_date, group_id, created_by')
       .or(orFilters)
       .order('event_date', { ascending: true })
     setEvents(data || [])

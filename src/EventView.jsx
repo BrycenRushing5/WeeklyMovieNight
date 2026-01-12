@@ -406,12 +406,12 @@ export default function EventView() {
     }
   }
 
-  const handleAddNomination = async (movie, isTheater, theaterDetails = null) => {
+  const handleAddNomination = async (movie, isTheater, theaterDetails = null, nominationTypeOverride = null) => {
     const { data: { user } } = await supabase.auth.getUser()
     
     // Check both lists to prevent duplicates
     const allNoms = [...myNominations, ...crewNominations]
-    const nominationType = isTheater ? 'theater' : 'streaming'
+    const nominationType = nominationTypeOverride || ((isTheater || theaterDetails) ? 'theater' : 'streaming')
     const alreadyExists = movie
       ? allNoms.find(n => n.movie?.id === movie.id && n.nomination_type === nominationType)
       : false
@@ -427,7 +427,11 @@ export default function EventView() {
           theater_notes: theaterDetails?.theater_notes || null
         } 
     ])
-    if (!error) refreshNominations()
+    if (error) {
+      alert(`Error: ${error.message}`)
+      return
+    }
+    refreshNominations()
   }
 
   const handleRemoveNomination = async (nomination) => {

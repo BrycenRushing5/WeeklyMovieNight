@@ -358,8 +358,12 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
   }
 
   const handleSelect = (movie, isTheater = false, theaterDetails = null) => {
+    const resolvedDetails = theaterDetails || (isTheater ? {
+      theater_name: theaterName.trim() || null,
+      theater_notes: theaterNotes.trim() || null
+    } : null)
     if (customAction) customAction(movie)
-    else onNominate(movie, isTheater, theaterDetails) 
+    else onNominate(movie, isTheater, resolvedDetails, isTheater ? 'theater' : null) 
     onClose()
   }
 

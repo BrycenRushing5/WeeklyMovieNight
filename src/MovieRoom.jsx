@@ -76,11 +76,11 @@ export default function MovieRoom() {
     }
   }
 
-  const handleAddNomination = async (movie, isTheater, theaterDetails = null) => {
+  const handleAddNomination = async (movie, isTheater, theaterDetails = null, nominationTypeOverride = null) => {
     const { data: { user } } = await supabase.auth.getUser()
     
     // Check if already nominated
-    const nominationType = isTheater ? 'theater' : 'streaming'
+    const nominationType = nominationTypeOverride || ((isTheater || theaterDetails) ? 'theater' : 'streaming')
     const alreadyExists = movie
       ? nominatedMovies.find(n => n.movie?.id === movie.id && n.nomination_type === nominationType)
       : false
@@ -96,7 +96,11 @@ export default function MovieRoom() {
           theater_notes: theaterDetails?.theater_notes || null
         } 
     ])
-    if (!error) refreshNominations()
+    if (error) {
+      alert(`Error: ${error.message}`)
+      return
+    }
+    refreshNominations()
   }
 
   // Location Fallback Logic

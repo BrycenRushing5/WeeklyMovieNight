@@ -17,6 +17,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
   const searchRequestId = useRef(0)
   const theaterSearchRequestId = useRef(0)
   const searchInputRef = useRef(null)
+  const theaterSearchInputRef = useRef(null)
   const [currentUserId, setCurrentUserId] = useState(null)
   
   // Lists
@@ -162,6 +163,12 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
     searchMovies()
     setShowFilters(false)
     searchInputRef.current?.blur()
+  }
+
+  function handleTheaterSearchSubmit(e) {
+    e.preventDefault()
+    searchTheaterMovies()
+    theaterSearchInputRef.current?.blur()
   }
 
   // 2. MY WATCHLIST
@@ -731,10 +738,12 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
 
                     <div style={{ marginTop: '18px', textAlign: 'left' }}>
                       <div className="text-sm" style={{ color: '#9ca3af', marginBottom: '8px' }}>Search for your movie</div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.08)', padding: '8px 10px', borderRadius: '12px' }}>
+                      <form onSubmit={handleTheaterSearchSubmit} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.08)', padding: '8px 10px', borderRadius: '12px' }}>
                         <Search size={16} color="#9ca3af" />
                         <input
+                          ref={theaterSearchInputRef}
                           type="text"
+                          enterKeyHint="search"
                           placeholder="Search movies..."
                           value={theaterSearchTerm}
                           onChange={(e) => setTheaterSearchTerm(e.target.value)}
@@ -746,6 +755,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                             onClick={() => {
                               setTheaterSearchTerm('')
                               setTheaterResults([])
+                              theaterSearchInputRef.current?.focus()
                             }}
                             style={{ background: 'transparent', border: 'none', color: '#9ca3af', padding: 0 }}
                             aria-label="Clear search"
@@ -753,7 +763,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                             <X size={14} />
                           </button>
                         )}
-                      </div>
+                      </form>
                       {theaterResults.length > 0 && (
                         <div style={{ marginTop: '12px' }}>
                           {theaterResults.map(m => (

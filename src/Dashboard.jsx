@@ -357,7 +357,7 @@ export default function Dashboard({ session }) {
                    }}
                  >
                    <div style={{ fontWeight: 700, marginBottom: '6px', color: '#e2e8f0' }}>
-                     This is where you can see your movie night Crews.
+                     This is where you see your movie night crews!
                    </div>
                    <div className="text-sm" style={{ color: '#cbd5e1' }}>
                      A crew is a group of users you plan your movie nights with. Use a crew to make repeat movie nights easier
@@ -481,7 +481,7 @@ export default function Dashboard({ session }) {
                   }}
                 >
                   <div style={{ fontWeight: 700, marginBottom: '6px', color: '#e2e8f0' }}>
-                    This is where you can see all of your events
+                    This is where you  see all your events!
                   </div>
                   <div className="text-sm" style={{ color: '#cbd5e1' }}>
                     An event is an upcoming movie night. You can invite people to events using the event link
@@ -590,7 +590,7 @@ export default function Dashboard({ session }) {
                     }}
                   >
                     <div style={{ fontWeight: 700, marginBottom: '6px', color: '#e2e8f0' }}>
-                      This is your watchlist
+                      This is your watchlist!
                     </div>
                     <div className="text-sm" style={{ color: '#cbd5e1' }}>
                       This is where you can add movies you actively want to watch. Having movies in your watchlist makes it easier for you and your friends to nominate them for a movie night

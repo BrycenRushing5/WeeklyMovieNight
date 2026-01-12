@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion' 
-import { X, Search, Filter, Book, Ticket, Users, ChevronDown, ChevronUp, PenLine } from 'lucide-react' 
+import { X, Search, Filter, Book, Ticket, Users, ChevronDown, ChevronUp, PenLine, Minus } from 'lucide-react' 
 import { supabase } from './supabaseClient'
 
 const DEFAULT_GENRES = ['Action', 'Comedy', 'Drama', 'Fantasy', 'Horror', 'Romance', 'Sci-Fi', 'Thriller', 'Family']
@@ -25,6 +25,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
   const [useScoreFilter, setUseScoreFilter] = useState(false)
   const [genreFilters, setGenreFilters] = useState([])
   const [showAllGenres, setShowAllGenres] = useState(false)
+  const [showNominationGuide, setShowNominationGuide] = useState(true)
 
   // Write In
   const [isWritingIn, setIsWritingIn] = useState(false)
@@ -67,6 +68,11 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
     }
     loadGenres()
     return () => { isMounted = false }
+  }, [])
+
+  useEffect(() => {
+    const dismissed = localStorage.getItem('nominationGuideDismissed')
+    setShowNominationGuide(dismissed !== 'true')
   }, [])
 
   // 1. GLOBAL SEARCH
@@ -225,6 +231,51 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
           <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
             <TabButton active={activeTab === 'search'} onClick={() => { setActiveTab('search'); setIsWritingIn(false) }}><Search size={16}/> Search</TabButton>
             <TabButton active={activeTab === 'writein'} onClick={() => { setActiveTab('writein'); setIsWritingIn(true) }}><PenLine size={16}/> Write In</TabButton>
+          </div>
+        )}
+
+        {isEventMode && showNominationGuide && (
+          <div style={{ position: 'relative', marginBottom: '14px', paddingTop: '8px', paddingRight: '12px' }}>
+            <div
+              style={{
+                padding: '14px',
+                borderRadius: '14px',
+                border: '1px dashed rgba(0,229,255,0.35)',
+                background: 'rgba(0,229,255,0.06)',
+                textAlign: 'center'
+              }}
+            >
+              <div style={{ fontWeight: 700, marginBottom: '6px', color: '#e2e8f0' }}>
+                Welcome to nominations!
+              </div>
+              <div className="text-sm" style={{ color: '#cbd5e1' }}>
+                You have four different ways to nominate movies. You can search the database, check out you or your friends watchlist, or suggest going to a theater! Once options are nominated, users can vote for the movies they want
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                localStorage.setItem('nominationGuideDismissed', 'true')
+                setShowNominationGuide(false)
+              }}
+              style={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                background: 'rgba(0,229,255,0.28)',
+                color: '#00E5FF',
+                borderRadius: '999px',
+                padding: '6px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 6px 16px rgba(0,229,255,0.2)'
+              }}
+              aria-label="Minimize nominations guide"
+              title="Dismiss"
+            >
+              <Minus size={14} />
+            </button>
           </div>
         )}
 

@@ -56,6 +56,8 @@ export default function EventView() {
     const now = new Date()
     return new Date(now.getFullYear(), now.getMonth(), 1)
   })
+  const isCreator = userId && event?.created_by === userId
+  const canEditEvent = Boolean(userId)
 
   useEffect(() => {
     if (code) loadData()
@@ -389,7 +391,7 @@ export default function EventView() {
           </div>
         </div>
         <div className="flex-gap" style={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          {userId && event.created_by === userId && (
+          {canEditEvent && (
             <button
               onClick={() => (showEditEvent ? setShowEditEvent(false) : startEditEvent())}
               style={{ background: showEditEvent ? 'rgba(0,229,255,0.2)' : 'rgba(255,255,255,0.08)', color: showEditEvent ? '#00E5FF' : 'white', padding: '8px 12px', borderRadius: '999px', fontWeight: 600, whiteSpace: 'nowrap' }}
@@ -419,7 +421,7 @@ export default function EventView() {
               <div>2. Nominate some movies.</div>
               <div>3. Select a movie based on peoples votes</div>
               <div style={{ marginTop: '6px' }}>
-                Rate a movie after watching it to see it added to your profile.
+                Rate a movie after watching it to see it added to your profile
               </div>
             </div>
           </div>
@@ -469,12 +471,14 @@ export default function EventView() {
           >
             {savingEvent ? 'Saving...' : 'Save Changes'}
           </button>
-          <button
-            onClick={() => setShowDeleteConfirm(true)}
-            style={{ background: 'rgba(255,77,109,0.15)', color: '#ff4d6d', padding: '10px', borderRadius: '999px', fontWeight: 700 }}
-          >
-            Delete Event
-          </button>
+          {isCreator && (
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              style={{ background: 'rgba(255,77,109,0.15)', color: '#ff4d6d', padding: '10px', borderRadius: '999px', fontWeight: 700 }}
+            >
+              Delete Event
+            </button>
+          )}
         </div>
       )}
 
@@ -509,23 +513,23 @@ export default function EventView() {
       <div style={{ height: '1px', background: 'rgba(255,255,255,0.08)', margin: '16px 0' }} />
 
       {!isWatching && (
-        <div className="flex-between" style={{ marginBottom: '20px' }}>
-          <span className="text-sm" style={{ fontWeight: 'bold', letterSpacing: '1px' }}>BALLOT ({myNominations.length + crewNominations.length})</span>
-          <div className="flex-gap">
+        <div style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div className="flex-between" style={{ flexWrap: 'wrap', gap: '10px' }}>
+            <div className="flex-gap" style={{ flexWrap: 'wrap', justifyContent: 'center', width: '100%' }}>
               {event.group_id === null && userId && event.created_by === userId && (
                 <button onClick={() => setShowAddCrew(!showAddCrew)} style={{ background: showAddCrew ? '#00E5FF' : 'rgba(255,255,255,0.1)', color: showAddCrew ? 'black' : 'white', padding: '10px', borderRadius: '50%' }}>
-                    <Users size={18} />
+                  <Users size={18} />
                 </button>
               )}
               <button
                 onClick={() => (groupShareCode ? setShowInvite(true) : handleCopyInvite())}
                 style={{ background: 'rgba(255,255,255,0.1)', color: 'white', padding: '10px 14px', borderRadius: '999px', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}
               >
-                  {inviteCopied ? <Check size={18} /> : <LinkIcon size={18} />}
-                  {inviteCopied ? 'Copied' : 'Invite'}
+                {inviteCopied ? <Check size={18} /> : <LinkIcon size={18} />}
+                {inviteCopied ? 'Copied' : 'Invite'}
               </button>
               <button onClick={() => setShowSearch(true)} style={{ background: 'var(--primary)', color: 'white', padding: '10px 16px', borderRadius: '20px', display: 'flex', gap: '6px', alignItems: 'center' }}>
-                  <Plus size={18} /> Nominate
+                <Plus size={18} /> Nominate
               </button>
               <button
                 onClick={() => hasNominations && setShowResultsView(true)}
@@ -543,38 +547,44 @@ export default function EventView() {
                 }}
                 title={hasNominations ? 'Select a movie' : 'Add nominations first'}
               >
-                  <Film size={18} /> Select
+                <Film size={18} /> Select
               </button>
+            </div>
           </div>
-        </div>
-      )}
 
-      {!isWatching && (myNominations.length > 0 || crewNominations.length > 0) && (
-        <div className="flex-gap" style={{ marginBottom: '18px', flexWrap: 'wrap' }}>
-          <button
-            onClick={() => setBallotFilter('all')}
-            style={{ background: ballotFilter === 'all' ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.08)', color: 'white', padding: '8px 12px', borderRadius: '999px', fontWeight: 600 }}
-          >
-            All
-          </button>
-          <button
-            onClick={() => setBallotFilter('missing')}
-            style={{ background: ballotFilter === 'missing' ? 'rgba(0,229,255,0.25)' : 'rgba(255,255,255,0.08)', color: ballotFilter === 'missing' ? '#00E5FF' : 'white', padding: '8px 12px', borderRadius: '999px', fontWeight: 600 }}
-          >
-            Missing My Vote{totalMissingVotes > 0 ? ` (${totalMissingVotes})` : ''}
-          </button>
-          <button
-            onClick={() => setBallotFilter('favorite')}
-            style={{ background: ballotFilter === 'favorite' ? 'rgba(255,0,85,0.22)' : 'rgba(255,255,255,0.08)', color: ballotFilter === 'favorite' ? '#ff4d6d' : 'white', padding: '8px 12px', borderRadius: '999px', fontWeight: 600 }}
-          >
-            Favorites{totalFavorites > 0 ? ` (${totalFavorites})` : ''}
-          </button>
-          <button
-            onClick={() => setBallotFilter('disliked')}
-            style={{ background: ballotFilter === 'disliked' ? 'rgba(255,0,85,0.22)' : 'rgba(255,255,255,0.08)', color: ballotFilter === 'disliked' ? '#ff4d6d' : 'white', padding: '8px 12px', borderRadius: '999px', fontWeight: 600 }}
-          >
-            Dislikes{totalDisliked > 0 ? ` (${totalDisliked})` : ''}
-          </button>
+          <div style={{ height: '1px', background: 'rgba(255,255,255,0.08)', margin: '4px 0' }} />
+
+          <div className="flex-between" style={{ alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <span className="text-sm" style={{ fontWeight: 'bold', letterSpacing: '1px' }}>BALLOT ({myNominations.length + crewNominations.length})</span>
+            {!isWatching && (myNominations.length > 0 || crewNominations.length > 0) && (
+              <div className="flex-gap" style={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setBallotFilter('all')}
+                  style={{ background: ballotFilter === 'all' ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.08)', color: 'white', padding: '8px 12px', borderRadius: '999px', fontWeight: 600 }}
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => setBallotFilter('missing')}
+                  style={{ background: ballotFilter === 'missing' ? 'rgba(0,229,255,0.25)' : 'rgba(255,255,255,0.08)', color: ballotFilter === 'missing' ? '#00E5FF' : 'white', padding: '8px 12px', borderRadius: '999px', fontWeight: 600 }}
+                >
+                  Missing My Vote{totalMissingVotes > 0 ? ` (${totalMissingVotes})` : ''}
+                </button>
+                <button
+                  onClick={() => setBallotFilter('favorite')}
+                  style={{ background: ballotFilter === 'favorite' ? 'rgba(255,0,85,0.22)' : 'rgba(255,255,255,0.08)', color: ballotFilter === 'favorite' ? '#ff4d6d' : 'white', padding: '8px 12px', borderRadius: '999px', fontWeight: 600 }}
+                >
+                  Favorites{totalFavorites > 0 ? ` (${totalFavorites})` : ''}
+                </button>
+                <button
+                  onClick={() => setBallotFilter('disliked')}
+                  style={{ background: ballotFilter === 'disliked' ? 'rgba(255,0,85,0.22)' : 'rgba(255,255,255,0.08)', color: ballotFilter === 'disliked' ? '#ff4d6d' : 'white', padding: '8px 12px', borderRadius: '999px', fontWeight: 600 }}
+                >
+                  Dislikes{totalDisliked > 0 ? ` (${totalDisliked})` : ''}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

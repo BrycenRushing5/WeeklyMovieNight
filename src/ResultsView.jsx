@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from './supabaseClient'
-import { X, Heart, ThumbsUp, ThumbsDown, Shuffle, PlayCircle } from 'lucide-react'
+import { X, Heart, ThumbsUp, ThumbsDown, Shuffle, PlayCircle, Minus } from 'lucide-react'
 
 export default function ResultsView({ eventId, onClose, onSelected }) {
   const [movies, setMovies] = useState([])
@@ -14,6 +14,7 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
   const [randomPick, setRandomPick] = useState(null)
   const [activeMovie, setActiveMovie] = useState(null)
   const [spinTick, setSpinTick] = useState(0)
+  const [showSelectionGuide, setShowSelectionGuide] = useState(true)
   const hasNominations = movies.length > 0
   
   useEffect(() => {
@@ -21,6 +22,11 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
     const sub = supabase.channel('votes').on('postgres_changes', { event: '*', schema: 'public', table: 'votes' }, calculateResults).subscribe()
     return () => supabase.removeChannel(sub)
   }, [eventId])
+
+  useEffect(() => {
+    const dismissed = localStorage.getItem('selectionGuideDismissed')
+    setShowSelectionGuide(dismissed !== 'true')
+  }, [])
   
   useEffect(() => {
     setRevealResults(false)
@@ -128,6 +134,51 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
             <h1 style={{ fontSize: '2rem', margin: 0 }}><span style={{color:'gold'}}>Selection Time</span></h1>
             <button onClick={onClose} style={{ background: '#333', padding: '8px', borderRadius: '50%', color: 'white' }}><X size={20} /></button>
         </div>
+
+        {showSelectionGuide && (
+          <div style={{ position: 'relative', marginBottom: '14px', paddingTop: '8px', paddingRight: '12px' }}>
+            <div
+              style={{
+                padding: '14px',
+                borderRadius: '14px',
+                border: '1px dashed rgba(0,229,255,0.35)',
+                background: 'rgba(0,229,255,0.06)',
+                textAlign: 'center'
+              }}
+            >
+              <div style={{ fontWeight: 700, marginBottom: '6px', color: '#e2e8f0' }}>
+                This is the selection page!
+              </div>
+              <div className="text-sm" style={{ color: '#cbd5e1' }}>
+                This is where your group can select a movie. Once everyone has submitted their nominations and votes, use this page to select an option. You have multiple selection methods to choose from so have fun and enjoy your movie!
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                localStorage.setItem('selectionGuideDismissed', 'true')
+                setShowSelectionGuide(false)
+              }}
+              style={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                background: 'rgba(0,229,255,0.28)',
+                color: '#00E5FF',
+                borderRadius: '999px',
+                padding: '6px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 6px 16px rgba(0,229,255,0.2)'
+              }}
+              aria-label="Minimize selection guide"
+              title="Dismiss"
+            >
+              <Minus size={14} />
+            </button>
+          </div>
+        )}
 
         {/* CONTROLS */}
         <div className="glass-panel" style={{ marginBottom: '20px' }}>
@@ -268,7 +319,7 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
         )}
         {!revealResults && method !== 'random' && (
           <div className="text-sm" style={{ textAlign: 'center', color: '#888' }}>
-            Ready to reveal. Tap the button above.
+            Ready to reveal? Tap the button above.
           </div>
         )}
 

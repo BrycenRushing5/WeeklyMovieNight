@@ -103,12 +103,28 @@ export default function RateMovie({ eventId, movie, onClose }) {
             onChange={(e) => setComment(e.target.value)}
             style={{ minHeight: '110px', width: '100%' }}
           />
-          <label style={{ marginTop: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-            <span className="text-sm" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <ThumbsUp size={16} /> Would watch again
-            </span>
-            <input className="toggle" type="checkbox" checked={wouldWatchAgain} onChange={(e) => setWouldWatchAgain(e.target.checked)} />
-          </label>
+          <button
+            type="button"
+            onClick={() => setWouldWatchAgain(prev => !prev)}
+            style={{
+              marginTop: '12px',
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              padding: '10px 12px',
+              borderRadius: '12px',
+              border: wouldWatchAgain ? '1px solid rgba(0,229,255,0.6)' : '1px solid rgba(255,255,255,0.12)',
+              background: wouldWatchAgain ? 'rgba(0,229,255,0.18)' : 'rgba(255,255,255,0.05)',
+              color: wouldWatchAgain ? '#00E5FF' : '#cbd5e1',
+              fontWeight: 700
+            }}
+            aria-pressed={wouldWatchAgain}
+          >
+            <ThumbsUp size={16} color={wouldWatchAgain ? '#00E5FF' : '#cbd5e1'} />
+            Would watch again
+          </button>
         </div>
 
         <button

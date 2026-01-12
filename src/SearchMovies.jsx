@@ -15,6 +15,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
   const [watchlistScope, setWatchlistScope] = useState('mine')
   const [genres, setGenres] = useState(DEFAULT_GENRES)
   const searchRequestId = useRef(0)
+  const theaterSearchRequestId = useRef(0)
   const searchInputRef = useRef(null)
   const [currentUserId, setCurrentUserId] = useState(null)
   
@@ -39,16 +40,33 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
   const [newGenreOption, setNewGenreOption] = useState(DEFAULT_GENRES[0])
   const [newScore, setNewScore] = useState('')
   const [newDescription, setNewDescription] = useState('')
-  const [theaterMovie, setTheaterMovie] = useState('')
   const [theaterName, setTheaterName] = useState('')
   const [theaterNotes, setTheaterNotes] = useState('')
+  const [theaterSearchTerm, setTheaterSearchTerm] = useState('')
+  const [theaterResults, setTheaterResults] = useState([])
+  const [theaterSelectedMovie, setTheaterSelectedMovie] = useState(null)
+  const [theaterWriteInMode, setTheaterWriteInMode] = useState(false)
+  const [theaterWriteInTitle, setTheaterWriteInTitle] = useState('')
+  const [theaterWriteInGenres, setTheaterWriteInGenres] = useState([])
+  const [theaterWriteInGenreOption, setTheaterWriteInGenreOption] = useState(DEFAULT_GENRES[0])
+  const [theaterWriteInScore, setTheaterWriteInScore] = useState('')
+  const [theaterWriteInDescription, setTheaterWriteInDescription] = useState('')
   const [writeInError, setWriteInError] = useState('')
+  const [theaterError, setTheaterError] = useState('')
 
   const parsedWriteInScore = Number.parseInt(newScore, 10)
   const writeInScoreColor = Number.isFinite(parsedWriteInScore)
     ? parsedWriteInScore >= 80
       ? '#4ade80'
       : parsedWriteInScore >= 60
+        ? '#facc15'
+        : '#94a3b8'
+    : '#94a3b8'
+  const parsedTheaterWriteInScore = Number.parseInt(theaterWriteInScore, 10)
+  const theaterWriteInScoreColor = Number.isFinite(parsedTheaterWriteInScore)
+    ? parsedTheaterWriteInScore >= 80
+      ? '#4ade80'
+      : parsedTheaterWriteInScore >= 60
         ? '#facc15'
         : '#94a3b8'
     : '#94a3b8'
@@ -85,6 +103,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
       if (!isMounted || cleaned.length === 0) return
       setGenres(cleaned)
       setNewGenreOption(prev => (cleaned.includes(prev) ? prev : cleaned[0]))
+      setTheaterWriteInGenreOption(prev => (cleaned.includes(prev) ? prev : cleaned[0]))
     }
     loadGenres()
     return () => { isMounted = false }
@@ -94,6 +113,12 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
     const dismissed = localStorage.getItem('nominationGuideDismissed')
     setShowNominationGuide(dismissed !== 'true')
   }, [])
+
+  useEffect(() => {
+    if (activeTab !== 'theater') return
+    const delayDebounceFn = setTimeout(() => searchTheaterMovies(), 300)
+    return () => clearTimeout(delayDebounceFn)
+  }, [activeTab, theaterSearchTerm])
 
   // 1. GLOBAL SEARCH
   async function searchMovies() {
@@ -115,6 +140,21 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
     }
     if (requestId !== searchRequestId.current) return
     setResults(applyFilters(data || [], { skipSearchMatch: Boolean(searchTerm) }))
+  }
+
+  async function searchTheaterMovies() {
+    const requestId = ++theaterSearchRequestId.current
+    const trimmed = theaterSearchTerm.trim()
+    if (!trimmed) {
+      setTheaterResults([])
+      return
+    }
+    const { data: fuzzyData } = await supabase.rpc('search_movies_fuzzy', {
+      query: trimmed,
+      limit_count: 12
+    })
+    if (requestId !== theaterSearchRequestId.current) return
+    setTheaterResults(fuzzyData || [])
   }
 
   function handleSearchSubmit(e) {
@@ -237,38 +277,74 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
       .map(([count, entries]) => ({ count, entries }))
   })()
 
-  function buildTheaterDescription() {
-    const parts = []
-    if (theaterMovie.trim()) parts.push(`Movie: ${theaterMovie.trim()}`)
-    if (theaterName.trim()) parts.push(`Theater: ${theaterName.trim()}`)
-    if (theaterNotes.trim()) parts.push(`Notes: ${theaterNotes.trim()}`)
-    if (parts.length === 0) return 'Trip to the cinema'
-    return `Trip to the cinema • ${parts.join(' • ')}`
+  function normalizeWriteInScore(value) {
+    const parsed = Number.parseInt(value, 10)
+    return Number.isFinite(parsed) ? parsed : null
   }
 
-  async function handleWriteIn(isTheater = false) {
-    const rawTitle = isTheater ? (theaterMovie || 'Movie Theater Trip') : (newTitle || searchTerm)
-    const titleToUse = rawTitle.trim()
+  async function createWriteInMovie({ title, description, genres, score }) {
+    const { data: movie } = await supabase.from('movies').insert([{ 
+        title, 
+        description: description || 'User Write-in', 
+        genre: genres, 
+        rt_score: score,
+        source: 'write in'
+      }]).select().single()
+    return movie
+  }
+
+  async function handleWriteIn() {
+    const titleToUse = (newTitle || searchTerm).trim()
     if (!titleToUse) {
       setWriteInError('Please enter a movie title before saving.')
       return
     }
     setWriteInError('')
     const genresToUse = newGenres.length > 0 ? newGenres : [newGenreOption]
+    const movie = await createWriteInMovie({
+      title: titleToUse,
+      description: newDescription.trim(),
+      genres: genresToUse,
+      score: normalizeWriteInScore(newScore)
+    })
 
-    const { data: movie } = await supabase.from('movies').insert([{ 
-        title: titleToUse, 
-        description: isTheater ? buildTheaterDescription() : (newDescription.trim() || 'User Write-in'), 
-        genre: isTheater ? ['Theater'] : genresToUse, 
-        rt_score: newScore ? parseInt(newScore) : null 
-      }]).select().single()
-
-    if (movie) handleSelect(movie, isTheater)
+    if (movie) handleSelect(movie, false)
   }
 
-  const handleSelect = (movie, isTheater = false) => {
+  async function handleTheaterNomination() {
+    const theaterDetails = {
+      theater_name: theaterName.trim() || null,
+      theater_notes: theaterNotes.trim() || null
+    }
+    if (theaterSelectedMovie) {
+      handleSelect(theaterSelectedMovie, true, theaterDetails)
+      return
+    }
+    if (!theaterWriteInMode) {
+      setTheaterError('')
+      handleSelect(null, true, theaterDetails)
+      return
+    }
+    const titleToUse = theaterWriteInTitle.trim()
+    if (!titleToUse) {
+      setTheaterError('Please enter a movie title for the write-in.')
+      return
+    }
+    setTheaterError('')
+    const genresToUse = theaterWriteInGenres.length > 0 ? theaterWriteInGenres : [theaterWriteInGenreOption]
+    const movie = await createWriteInMovie({
+      title: titleToUse,
+      description: theaterWriteInDescription.trim(),
+      genres: genresToUse,
+      score: normalizeWriteInScore(theaterWriteInScore)
+    })
+
+    if (movie) handleSelect(movie, true, theaterDetails)
+  }
+
+  const handleSelect = (movie, isTheater = false, theaterDetails = null) => {
     if (customAction) customAction(movie)
-    else onNominate(movie, isTheater) 
+    else onNominate(movie, isTheater, theaterDetails) 
     onClose()
   }
 
@@ -638,7 +714,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                         )}
                       </div>
                     </div>
-                    <button onClick={() => handleWriteIn(false)} style={{ background: '#00E5FF', color: 'black', padding: '15px', borderRadius: '12px' }}>Save & Select</button>
+                    <button onClick={() => handleWriteIn()} style={{ background: '#00E5FF', color: 'black', padding: '15px', borderRadius: '12px' }}>Save & Select</button>
                     <button onClick={() => { setIsWritingIn(false); setActiveTab('search') }} className="text-sm" style={{background:'none'}}>Cancel</button>
                  </div>
             )}
@@ -649,11 +725,165 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                     <Ticket size={48} color="gold" style={{marginBottom:'10px'}}/>
                     <h3 style={{color:'gold'}}>Let's Go Out</h3>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '20px' }}>
-                      <input placeholder="Movie Selection (Optional)" value={theaterMovie} onChange={(e) => setTheaterMovie(e.target.value)} />
                       <input placeholder="Theater (Optional)" value={theaterName} onChange={(e) => setTheaterName(e.target.value)} />
-                      <textarea placeholder="Description (Optional)" value={theaterNotes} onChange={(e) => setTheaterNotes(e.target.value)} style={{ minHeight: '90px', resize: 'none' }} />
+                      <textarea placeholder="Trip Notes (Optional)" value={theaterNotes} onChange={(e) => setTheaterNotes(e.target.value)} style={{ minHeight: '90px', resize: 'none' }} />
                     </div>
-                    <button onClick={() => handleWriteIn(true)} style={{ background: 'gold', color: 'black', width: '100%', padding: '15px', borderRadius: '12px', marginTop: '15px' }}>Nominate Trip</button>
+
+                    <div style={{ marginTop: '18px', textAlign: 'left' }}>
+                      <div className="text-sm" style={{ color: '#9ca3af', marginBottom: '8px' }}>Search for your movie</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.08)', padding: '8px 10px', borderRadius: '12px' }}>
+                        <Search size={16} color="#9ca3af" />
+                        <input
+                          type="text"
+                          placeholder="Search movies..."
+                          value={theaterSearchTerm}
+                          onChange={(e) => setTheaterSearchTerm(e.target.value)}
+                          style={{ background: 'transparent', border: 'none', color: 'white', width: '100%' }}
+                        />
+                        {theaterSearchTerm && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTheaterSearchTerm('')
+                              setTheaterResults([])
+                            }}
+                            style={{ background: 'transparent', border: 'none', color: '#9ca3af', padding: 0 }}
+                            aria-label="Clear search"
+                          >
+                            <X size={14} />
+                          </button>
+                        )}
+                      </div>
+                      {theaterResults.length > 0 && (
+                        <div style={{ marginTop: '12px' }}>
+                          {theaterResults.map(m => (
+                            <MovieRow
+                              key={m.id}
+                              movie={m}
+                              onSelect={() => {
+                                setTheaterSelectedMovie(m)
+                                setTheaterWriteInMode(false)
+                                setTheaterSearchTerm('')
+                                setTheaterResults([])
+                                setTheaterError('')
+                              }}
+                            />
+                          ))}
+                        </div>
+                      )}
+                      {theaterSelectedMovie && (
+                        <div className="glass-panel" style={{ marginTop: '12px', padding: '12px', borderRadius: '12px', textAlign: 'left' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'center' }}>
+                            <div style={{ fontWeight: 700 }}>{theaterSelectedMovie.title}</div>
+                            <button
+                              type="button"
+                              onClick={() => setTheaterSelectedMovie(null)}
+                              style={{ background: 'transparent', border: 'none', color: '#9ca3af', display: 'inline-flex' }}
+                              aria-label="Clear selected movie"
+                            >
+                              <X size={16} />
+                            </button>
+                          </div>
+                          <div className="text-sm" style={{ color: '#9ca3af', marginTop: '6px' }}>
+                            Selected movie for this theater trip.
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {!theaterWriteInMode && (
+                      <div style={{ marginTop: '18px', textAlign: 'left' }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTheaterWriteInMode(true)
+                            setTheaterWriteInTitle((current) => (current || theaterSearchTerm).trim())
+                            setTheaterSearchTerm('')
+                            setTheaterResults([])
+                            setTheaterSelectedMovie(null)
+                            setTheaterError('')
+                          }}
+                          style={{ background: 'transparent', border: '1px dashed rgba(255,215,0,0.5)', color: 'gold', padding: '10px 12px', borderRadius: '12px', width: '100%' }}
+                        >
+                          Can’t find it? Write in a movie
+                        </button>
+                      </div>
+                    )}
+
+                    {theaterWriteInMode && (
+                      <div style={{ marginTop: '16px', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <div className="flex-gap" style={{ alignItems: 'center' }}>
+                          <input
+                            placeholder="Movie Title"
+                            value={theaterWriteInTitle}
+                            onChange={(e) => setTheaterWriteInTitle(e.target.value)}
+                            style={{ flex: 1, minWidth: 0 }}
+                          />
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'rgba(0,0,0,0.3)', borderRadius: '8px', padding: '4px 8px', border: `1px solid ${theaterWriteInScoreColor}`, color: theaterWriteInScoreColor, height: '32px' }}>
+                            <span role="img" aria-label="tomato" style={{ fontSize: '1.1rem' }}>🍅</span>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              value={theaterWriteInScore}
+                              onChange={(e) => setTheaterWriteInScore(e.target.value.replace(/[^0-9]/g, ''))}
+                              style={{ width: '24px', background: 'transparent', border: 'none', color: theaterWriteInScoreColor, textAlign: 'center', padding: 0 }}
+                            />
+                            <span style={{ fontWeight: 700 }}>%</span>
+                          </div>
+                        </div>
+                        <textarea
+                          placeholder="Write a description for the movie here!"
+                          value={theaterWriteInDescription}
+                          onChange={(e) => setTheaterWriteInDescription(e.target.value)}
+                          style={{ minHeight: '90px', resize: 'none' }}
+                        />
+                        <div className="text-sm" style={{ color: '#9ca3af' }}>Add what genres you think it hits!</div>
+                        <div className="flex-gap">
+                          <select value={theaterWriteInGenreOption} onChange={(e) => setTheaterWriteInGenreOption(e.target.value)} style={{ flex: 1, height: '52px', paddingRight: '64px' }}>
+                            {genres.map(g => <option key={g} value={g}>{g}</option>)}
+                          </select>
+                          <button
+                            onClick={() => setTheaterWriteInGenres(prev => prev.includes(theaterWriteInGenreOption) ? prev : [...prev, theaterWriteInGenreOption])}
+                            style={{ height: '36px', alignSelf: 'center', padding: '0 12px', borderRadius: '10px', background: 'rgba(255,255,255,0.1)', color: 'white', fontWeight: 700 }}
+                          >
+                            Add
+                          </button>
+                        </div>
+                        {theaterWriteInGenres.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                            {theaterWriteInGenres.map(g => (
+                              <button
+                                key={g}
+                                onClick={() => setTheaterWriteInGenres(prev => prev.filter(item => item !== g))}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  padding: '6px 10px',
+                                  borderRadius: '999px',
+                                  border: '1px solid rgba(0,229,255,0.4)',
+                                  background: 'rgba(0,229,255,0.12)',
+                                  color: '#00E5FF',
+                                  fontSize: '0.75rem'
+                                }}
+                              >
+                                {g}
+                                <X size={12} />
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {theaterError && (
+                      <div className="glass-panel" style={{ marginTop: '14px', border: '1px solid rgba(255,0,85,0.35)', background: 'rgba(255,0,85,0.12)', color: '#ffd1dc', textAlign: 'center' }}>
+                        {theaterError}
+                      </div>
+                    )}
+
+                    <button onClick={handleTheaterNomination} style={{ background: 'gold', color: 'black', width: '100%', padding: '15px', borderRadius: '12px', marginTop: '15px' }}>Nominate Trip</button>
                 </div>
             )}
         </div>

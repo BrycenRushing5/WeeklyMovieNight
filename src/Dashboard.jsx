@@ -499,15 +499,17 @@ export default function Dashboard({ session }) {
 
              <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
                {showCrewsHint && (
-                 <div style={{ position: 'absolute', left: 0, right: 0, bottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', color: '#94a3b8', fontSize: '0.75rem', pointerEvents: 'none' }}>
+                 <div style={{ position: 'absolute', left: 0, right: 0, bottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', color: '#cbd5e1', fontSize: '0.75rem', pointerEvents: 'none', zIndex: 2 }}>
+                   <span style={{ background: 'rgba(15,23,42,0.9)', border: '1px solid rgba(255,255,255,0.1)', padding: '4px 10px', borderRadius: '999px', display: 'inline-flex', alignItems: 'center', gap: '6px', boxShadow: '0 8px 18px rgba(0,0,0,0.35)' }}>
                    <span>Scroll for more</span>
                    <ChevronDown size={14} />
+                   </span>
                  </div>
                )}
                <div
                  ref={crewsListRef}
                  onScroll={(e) => updateScrollHint(e.currentTarget, setShowCrewsHint)}
-                 style={{ height: '100%', overflowY: 'auto', paddingRight: '12px', paddingBottom: '28px', scrollbarGutter: 'stable' }}
+                 style={{ height: '100%', overflowY: 'auto', paddingRight: '12px', paddingBottom: '12px', scrollbarGutter: 'stable' }}
                >
                  {groups.length === 0 ? (
                    <p className="text-sm" style={{ textAlign: 'center', color: '#9ca3af' }}>
@@ -617,15 +619,17 @@ export default function Dashboard({ session }) {
 
             <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
               {showEventsHint && (
-                <div style={{ position: 'absolute', left: 0, right: 0, bottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', color: '#94a3b8', fontSize: '0.75rem', pointerEvents: 'none' }}>
+                <div style={{ position: 'absolute', left: 0, right: 0, bottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', color: '#cbd5e1', fontSize: '0.75rem', pointerEvents: 'none', zIndex: 2 }}>
+                  <span style={{ background: 'rgba(15,23,42,0.9)', border: '1px solid rgba(255,255,255,0.1)', padding: '4px 10px', borderRadius: '999px', display: 'inline-flex', alignItems: 'center', gap: '6px', boxShadow: '0 8px 18px rgba(0,0,0,0.35)' }}>
                   <span>Scroll for more</span>
                   <ChevronDown size={14} />
+                  </span>
                 </div>
               )}
               <div
                 ref={eventsListRef}
                 onScroll={(e) => updateScrollHint(e.currentTarget, setShowEventsHint)}
-                style={{ height: '100%', overflowY: 'auto', paddingRight: '12px', paddingBottom: '28px', scrollbarGutter: 'stable' }}
+                style={{ height: '100%', overflowY: 'auto', paddingRight: '12px', paddingBottom: '12px', scrollbarGutter: 'stable' }}
               >
                 {events.length === 0 ? (
                   <p className="text-sm" style={{ textAlign: 'center', color: '#9ca3af' }}>
@@ -800,15 +804,17 @@ export default function Dashboard({ session }) {
 
               <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
                 {showWatchlistHint && (
-                  <div style={{ position: 'absolute', left: 0, right: 0, bottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', color: '#94a3b8', fontSize: '0.75rem', pointerEvents: 'none' }}>
+                  <div style={{ position: 'absolute', left: 0, right: 0, bottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', color: '#cbd5e1', fontSize: '0.75rem', pointerEvents: 'none', zIndex: 2 }}>
+                    <span style={{ background: 'rgba(15,23,42,0.9)', border: '1px solid rgba(255,255,255,0.1)', padding: '4px 10px', borderRadius: '999px', display: 'inline-flex', alignItems: 'center', gap: '6px', boxShadow: '0 8px 18px rgba(0,0,0,0.35)' }}>
                     <span>Scroll for more</span>
                     <ChevronDown size={14} />
+                    </span>
                   </div>
                 )}
                 <div
                   ref={watchlistListRef}
                   onScroll={(e) => updateScrollHint(e.currentTarget, setShowWatchlistHint)}
-                  style={{ height: '100%', overflowY: 'auto', paddingRight: '12px', paddingBottom: '28px', scrollbarGutter: 'stable' }}
+                  style={{ height: '100%', overflowY: 'auto', paddingRight: '12px', paddingBottom: '12px', scrollbarGutter: 'stable' }}
                 >
                   {filteredWatchlist.length === 0 && <p className="text-sm" style={{textAlign:'center'}}>No movies found.</p>}
                   

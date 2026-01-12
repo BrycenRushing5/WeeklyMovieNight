@@ -31,19 +31,26 @@ export default function MovieRoom() {
     setEvent(eventData)
 
     // 2. Get Nominations
-    await refreshNominations()
+    const nominations = await refreshNominations()
 
     // 3. Get My Votes
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
+        const nominationIdByMovieId = new Map()
+        ;(nominations || []).forEach((nom) => {
+          if (nom.movie?.id) nominationIdByMovieId.set(nom.movie.id, nom.id)
+        })
         const { data: votes } = await supabase
             .from('votes')
-            .select('movie_id, vote_type')
+            .select('nomination_id, movie_id, vote_type')
             .eq('event_id', code)
             .eq('user_id', user.id)
         
         const voteMap = {}
-        votes?.forEach(v => voteMap[v.movie_id] = v.vote_type)
+        votes?.forEach(v => {
+          const key = v.nomination_id || nominationIdByMovieId.get(v.movie_id)
+          if (key) voteMap[key] = v.vote_type
+        })
         setMyVotes(voteMap)
     }
     setLoading(false)
@@ -52,35 +59,38 @@ export default function MovieRoom() {
   async function refreshNominations() {
     const { data } = await supabase
       .from('nominations')
-      .select('id, nominated_by, nomination_type, movie:movies (*)')
+      .select('id, nominated_by, nomination_type, theater_name, theater_notes, movie:movies (*)')
       .eq('event_id', code)
     setNominatedMovies(data || [])
+    return data || []
   }
 
-  const handleVote = async (movieId, voteValue) => {
-    setMyVotes((prev) => ({ ...prev, [movieId]: voteValue })) // Instant UI update
+  const handleVote = async (nominationId, voteValue) => {
+    setMyVotes((prev) => ({ ...prev, [nominationId]: voteValue })) // Instant UI update
     
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
         await supabase.from('votes').upsert([
-            { event_id: code, movie_id: movieId, user_id: user.id, vote_type: voteValue }
-        ], { onConflict: 'event_id, movie_id, user_id' })
+            { event_id: code, nomination_id: nominationId, user_id: user.id, vote_type: voteValue }
+        ], { onConflict: 'event_id, nomination_id, user_id' })
     }
   }
 
-  const handleAddNomination = async (movie, isTheater) => {
+  const handleAddNomination = async (movie, isTheater, theaterDetails = null) => {
     const { data: { user } } = await supabase.auth.getUser()
     
     // Check if already nominated
-    const alreadyExists = nominatedMovies.find(n => n.movie.id === movie.id)
+    const alreadyExists = movie ? nominatedMovies.find(n => n.movie?.id === movie.id) : false
     if (alreadyExists) return alert("Already nominated!")
 
     const { error } = await supabase.from('nominations').insert([
         { 
           event_id: code, 
-          movie_id: movie.id, 
+          movie_id: movie?.id || null, 
           nominated_by: user.id,
-          nomination_type: isTheater ? 'theater' : 'streaming'
+          nomination_type: isTheater ? 'theater' : 'streaming',
+          theater_name: theaterDetails?.theater_name || null,
+          theater_notes: theaterDetails?.theater_notes || null
         } 
     ])
     if (!error) refreshNominations()
@@ -140,18 +150,24 @@ export default function MovieRoom() {
         </div>
       ) : (
         nominatedMovies.map((item) => {
-          const currentVote = myVotes[item.movie.id]
+          const currentVote = myVotes[item.id]
           const isTheater = item.nomination_type === 'theater'
+          const displayMovie = buildNominationDisplay(item)
           
           return (
             <div key={item.id} className={isTheater ? 'theater-card' : ''} style={{ borderRadius: '16px', marginBottom: '16px' }}>
-                <MovieCard movie={item.movie} meta={
-                    isTheater ? <span style={{color: 'gold', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '5px'}}><Ticket size={14}/> THEATER TRIP</span> : null
+                <MovieCard movie={displayMovie} meta={
+                    isTheater ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <span style={{color: 'gold', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '5px'}}><Ticket size={14}/> THEATER TRIP</span>
+                        {renderTheaterDetails(item)}
+                      </div>
+                    ) : null
                 }>
                     <div style={{ display: 'flex', gap: '8px' }}>
-                        <VoteBtn active={currentVote === -2} type="down" onClick={() => handleVote(item.movie.id, -2)} />
-                        <VoteBtn active={currentVote === 1} type="up" onClick={() => handleVote(item.movie.id, 1)} />
-                        <VoteBtn active={currentVote === 2} type="love" onClick={() => handleVote(item.movie.id, 2)} />
+                        <VoteBtn active={currentVote === -2} type="down" onClick={() => handleVote(item.id, -2)} />
+                        <VoteBtn active={currentVote === 1} type="up" onClick={() => handleVote(item.id, 1)} />
+                        <VoteBtn active={currentVote === 2} type="love" onClick={() => handleVote(item.id, 2)} />
                     </div>
                 </MovieCard>
             </div>
@@ -171,6 +187,30 @@ export default function MovieRoom() {
         )}
       </AnimatePresence>
     </div>
+  )
+}
+
+function buildNominationDisplay(nomination) {
+  if (!nomination) return null
+  if (nomination.movie) return nomination.movie
+  return {
+    title: null,
+    genre: null,
+    description: null,
+    rt_score: null
+  }
+}
+
+function renderTheaterDetails(nomination) {
+  if (!nomination || nomination.nomination_type !== 'theater') return null
+  const details = []
+  if (nomination.theater_name) details.push(nomination.theater_name)
+  if (nomination.theater_notes) details.push(nomination.theater_notes)
+  if (details.length === 0) return null
+  return (
+    <span className="text-sm" style={{ color: '#fef3c7' }}>
+      {details.join(' | ')}
+    </span>
   )
 }
 

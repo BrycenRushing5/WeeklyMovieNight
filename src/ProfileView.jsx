@@ -42,11 +42,14 @@ export default function ProfileView({ session }) {
 
     const { data: nominations } = await supabase
       .from('nominations')
-      .select('id, movie_id, event:events (id, selected_movie_id)')
+      .select('id, movie_id, event:events (id, selected_nomination_id, selected_movie_id)')
       .eq('nominated_by', userId)
 
     const nominationTotal = nominations?.length || 0
-    const nominationWins = (nominations || []).filter(n => n.event?.selected_movie_id === n.movie_id).length
+    const nominationWins = (nominations || []).filter(n => {
+      if (n.event?.selected_nomination_id) return n.event.selected_nomination_id === n.id
+      return n.movie_id && n.event?.selected_movie_id === n.movie_id
+    }).length
     const successPercent = nominationTotal ? Math.round((nominationWins / nominationTotal) * 100) : 0
 
     const { data: reviews } = await supabase

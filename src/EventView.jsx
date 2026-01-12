@@ -51,7 +51,7 @@ export default function EventView() {
   const [attendeesLoading, setAttendeesLoading] = useState(false)
   const [showMapChoice, setShowMapChoice] = useState(false)
   const [mapQuery, setMapQuery] = useState('')
-  const [selectedMovie, setSelectedMovie] = useState(null)
+  const [selectedNomination, setSelectedNomination] = useState(null)
   const [showRateMovie, setShowRateMovie] = useState(false)
   const [showDateTimePicker, setShowDateTimePicker] = useState(false)
   const [showEventGuide, setShowEventGuide] = useState(true)
@@ -89,10 +89,12 @@ export default function EventView() {
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'events', filter: `id=eq.${code}` }, (payload) => {
         const updated = payload.new
         setEvent(prev => (prev ? { ...prev, ...updated } : updated))
-        if (updated?.selected_movie_id) {
-          fetchSelectedMovie(updated.selected_movie_id)
+        if (updated?.selected_nomination_id) {
+          fetchSelectedNomination(updated.selected_nomination_id)
+        } else if (updated?.selected_movie_id) {
+          fetchSelectedNominationByMovie(updated.selected_movie_id)
         } else {
-          setSelectedMovie(null)
+          setSelectedNomination(null)
         }
       })
       .subscribe()
@@ -106,8 +108,10 @@ export default function EventView() {
       const { data: eventData, error: eventError } = await supabase.from('events').select('*').eq('id', code).single()
       if (eventError) throw eventError
       setEvent(eventData)
-      if (eventData?.selected_movie_id) {
-        fetchSelectedMovie(eventData.selected_movie_id)
+      if (eventData?.selected_nomination_id) {
+        fetchSelectedNomination(eventData.selected_nomination_id)
+      } else if (eventData?.selected_movie_id) {
+        fetchSelectedNominationByMovie(eventData.selected_movie_id)
       }
       if (eventData.group_id) {
         const { data: groupData } = await supabase.from('groups').select('share_code').eq('id', eventData.group_id).single()
@@ -117,15 +121,26 @@ export default function EventView() {
       }
 
       // 2. Get Nominations
-      await refreshNominations()
+      const nominations = await refreshNominations()
 
       // 3. Get Votes
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
           setUserId(user.id)
-          const { data: votes } = await supabase.from('votes').select('movie_id, vote_type').eq('event_id', code).eq('user_id', user.id)
+          const nominationIdByMovieId = new Map()
+          ;(nominations || []).forEach((nom) => {
+            if (nom.movie?.id) nominationIdByMovieId.set(nom.movie.id, nom.id)
+          })
+          const { data: votes } = await supabase
+            .from('votes')
+            .select('nomination_id, movie_id, vote_type')
+            .eq('event_id', code)
+            .eq('user_id', user.id)
           const voteMap = {}
-          votes?.forEach(v => voteMap[v.movie_id] = v.vote_type)
+          votes?.forEach(v => {
+            const key = v.nomination_id || nominationIdByMovieId.get(v.movie_id)
+            if (key) voteMap[key] = v.vote_type
+          })
           setMyVotes(voteMap)
           fetchMyGroups(user.id)
           await supabase
@@ -143,17 +158,39 @@ export default function EventView() {
 
   async function refreshNominations() {
     const { data: { user } } = await supabase.auth.getUser()
-    const { data } = await supabase.from('nominations').select('id, nominated_by, nomination_type, movie:movies (*)').eq('event_id', code)
+    const { data } = await supabase
+      .from('nominations')
+      .select('id, nominated_by, nomination_type, theater_name, theater_notes, movie:movies (*)')
+      .eq('event_id', code)
     
     if (data) {
         setMyNominations(data.filter(n => n.nominated_by === user.id))
         setCrewNominations(data.filter(n => n.nominated_by !== user.id))
     }
+    return data || []
   }
 
-  async function fetchSelectedMovie(movieId) {
-    const { data } = await supabase.from('movies').select('*').eq('id', movieId).single()
-    if (data) setSelectedMovie(data)
+  async function fetchSelectedNomination(nominationId) {
+    const { data } = await supabase
+      .from('nominations')
+      .select('id, nomination_type, theater_name, theater_notes, movie:movies (*)')
+      .eq('id', nominationId)
+      .single()
+    if (data) setSelectedNomination(data)
+  }
+
+  async function fetchSelectedNominationByMovie(movieId) {
+    if (!movieId) return
+    const { data } = await supabase
+      .from('nominations')
+      .select('id, nomination_type, theater_name, theater_notes, movie:movies (*)')
+      .eq('event_id', code)
+      .eq('movie_id', movieId)
+      .single()
+    if (data) {
+      setSelectedNomination(data)
+      setEvent(prev => (prev ? { ...prev, selected_nomination_id: data.id } : prev))
+    }
   }
 
   async function fetchMyGroups(currentUserId) {
@@ -282,10 +319,11 @@ export default function EventView() {
 
     const { data: nominations } = await supabase
       .from('nominations')
-      .select('movie_id')
+      .select('id, movie_id')
       .eq('event_id', code)
       .eq('nominated_by', user.id)
-    const movieIds = (nominations || []).map(n => n.movie_id)
+    const nominationIds = (nominations || []).map(n => n.id)
+    const movieIds = (nominations || []).map(n => n.movie_id).filter(Boolean)
 
     await supabase
       .from('nominations')
@@ -293,6 +331,13 @@ export default function EventView() {
       .eq('event_id', code)
       .eq('nominated_by', user.id)
 
+    if (nominationIds.length > 0) {
+      await supabase
+        .from('votes')
+        .delete()
+        .eq('event_id', code)
+        .in('nomination_id', nominationIds)
+    }
     if (movieIds.length > 0) {
       await supabase
         .from('votes')
@@ -333,14 +378,14 @@ export default function EventView() {
     }
   }
 
-  const handleVote = async (movieId, voteValue) => {
-    const isRemoving = myVotes[movieId] === voteValue
+  const handleVote = async (nominationId, voteValue) => {
+    const isRemoving = myVotes[nominationId] === voteValue
     setMyVotes((prev) => {
       const next = { ...prev }
       if (isRemoving) {
-        delete next[movieId]
+        delete next[nominationId]
       } else {
-        next[movieId] = voteValue
+        next[nominationId] = voteValue
       }
       return next
     })
@@ -351,26 +396,33 @@ export default function EventView() {
           .from('votes')
           .delete()
           .eq('event_id', code)
-          .eq('movie_id', movieId)
+          .eq('nomination_id', nominationId)
           .eq('user_id', user.id)
       } else {
         await supabase.from('votes').upsert([
-          { event_id: code, movie_id: movieId, user_id: user.id, vote_type: voteValue }
-        ], { onConflict: 'event_id, movie_id, user_id' })
+          { event_id: code, nomination_id: nominationId, user_id: user.id, vote_type: voteValue }
+        ], { onConflict: 'event_id, nomination_id, user_id' })
       }
     }
   }
 
-  const handleAddNomination = async (movie, isTheater) => {
+  const handleAddNomination = async (movie, isTheater, theaterDetails = null) => {
     const { data: { user } } = await supabase.auth.getUser()
     
     // Check both lists to prevent duplicates
     const allNoms = [...myNominations, ...crewNominations]
-    const alreadyExists = allNoms.find(n => n.movie.id === movie.id)
+    const alreadyExists = movie ? allNoms.find(n => n.movie?.id === movie.id) : false
     if (alreadyExists) return alert("Already nominated!")
 
     const { error } = await supabase.from('nominations').insert([
-        { event_id: code, movie_id: movie.id, nominated_by: user.id, nomination_type: isTheater ? 'theater' : 'streaming' } 
+        { 
+          event_id: code, 
+          movie_id: movie?.id || null, 
+          nominated_by: user.id, 
+          nomination_type: isTheater ? 'theater' : 'streaming',
+          theater_name: theaterDetails?.theater_name || null,
+          theater_notes: theaterDetails?.theater_notes || null
+        } 
     ])
     if (!error) refreshNominations()
   }
@@ -389,7 +441,14 @@ export default function EventView() {
       .from('votes')
       .delete()
       .eq('event_id', code)
-      .eq('movie_id', nomination.movie.id)
+      .eq('nomination_id', nomination.id)
+    if (nomination.movie?.id) {
+      await supabase
+        .from('votes')
+        .delete()
+        .eq('event_id', code)
+        .eq('movie_id', nomination.movie.id)
+    }
     refreshNominations()
   }
 
@@ -426,31 +485,34 @@ export default function EventView() {
   const handleChangeMovie = async () => {
     const { error } = await supabase
       .from('events')
-      .update({ selected_movie_id: null })
+      .update({ selected_nomination_id: null, selected_movie_id: null })
       .eq('id', code)
     if (!error) {
-      setEvent(prev => (prev ? { ...prev, selected_movie_id: null } : prev))
-      setSelectedMovie(null)
+      setEvent(prev => (prev ? { ...prev, selected_nomination_id: null, selected_movie_id: null } : prev))
+      setSelectedNomination(null)
       setShowResultsView(true)
     }
   }
 
-  const handleSelectedMovie = async (movieId) => {
-    setEvent(prev => (prev ? { ...prev, selected_movie_id: movieId } : prev))
-    await fetchSelectedMovie(movieId)
+  const handleSelectedNomination = async ({ nominationId, movieId }) => {
+    const updates = { selected_nomination_id: nominationId, selected_movie_id: movieId || null }
+    setEvent(prev => (prev ? { ...prev, ...updates } : prev))
+    await fetchSelectedNomination(nominationId)
   }
 
-  const isWatching = Boolean(event?.selected_movie_id)
-  const isMissingVote = (movieId) => myVotes[movieId] === undefined
-  const missingMyNominations = myNominations.filter(item => isMissingVote(item.movie.id))
-  const missingCrewNominations = crewNominations.filter(item => isMissingVote(item.movie.id))
+  const isWatching = Boolean(selectedNomination)
+  const isMissingVote = (nominationId) => myVotes[nominationId] === undefined
+  const missingMyNominations = myNominations.filter(item => isMissingVote(item.id))
+  const missingCrewNominations = crewNominations.filter(item => isMissingVote(item.id))
   const totalMissingVotes = missingMyNominations.length + missingCrewNominations.length
-  const dislikedMyNominations = myNominations.filter(item => myVotes[item.movie.id] === -2)
-  const dislikedCrewNominations = crewNominations.filter(item => myVotes[item.movie.id] === -2)
+  const dislikedMyNominations = myNominations.filter(item => myVotes[item.id] === -2)
+  const dislikedCrewNominations = crewNominations.filter(item => myVotes[item.id] === -2)
   const totalDisliked = dislikedMyNominations.length + dislikedCrewNominations.length
-  const favoriteMyNominations = myNominations.filter(item => myVotes[item.movie.id] === 2)
-  const favoriteCrewNominations = crewNominations.filter(item => myVotes[item.movie.id] === 2)
+  const favoriteMyNominations = myNominations.filter(item => myVotes[item.id] === 2)
+  const favoriteCrewNominations = crewNominations.filter(item => myVotes[item.id] === 2)
   const totalFavorites = favoriteMyNominations.length + favoriteCrewNominations.length
+  const selectedMovie = selectedNomination?.movie || null
+  const selectedDisplayMovie = selectedNomination ? buildNominationDisplay(selectedNomination) : null
   const hasNominations = myNominations.length + crewNominations.length > 0
   const filteredMyNominations = ballotFilter === 'missing'
     ? missingMyNominations
@@ -791,7 +853,7 @@ export default function EventView() {
         </div>
       )}
 
-      {isWatching && selectedMovie && (
+      {isWatching && selectedDisplayMovie && (
         <div style={{ marginBottom: '20px' }}>
           <div className="flex-between" style={{ marginBottom: '10px' }}>
             <span className="text-sm" style={{ fontWeight: 'bold', letterSpacing: '1px' }}>NOW SHOWING</span>
@@ -800,12 +862,21 @@ export default function EventView() {
             </button>
           </div>
           <MovieCard
-            movie={selectedMovie}
-            meta={<span style={{ color: '#00E5FF', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}><Star size={14} /> Winner</span>}
+            movie={selectedDisplayMovie}
+            meta={
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <span style={{ color: '#00E5FF', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Star size={14} /> Winner
+                </span>
+                {renderTheaterDetails(selectedNomination)}
+              </div>
+            }
           >
-            <button onClick={() => setShowRateMovie(true)} style={{ background: '#00E5FF', color: 'black', padding: '12px', borderRadius: '12px', fontWeight: 700, width: '100%' }}>
-              Rate Movie
-            </button>
+            {selectedMovie && (
+              <button onClick={() => setShowRateMovie(true)} style={{ background: '#00E5FF', color: 'black', padding: '12px', borderRadius: '12px', fontWeight: 700, width: '100%' }}>
+                Rate Movie
+              </button>
+            )}
           </MovieCard>
           <button onClick={handleChangeMovie} style={{ marginTop: '6px', background: 'none', border: 'none', color: '#888', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
             <RotateCcw size={14} /> Change Movie
@@ -916,7 +987,7 @@ export default function EventView() {
         <ResultsView
           eventId={code}
           onClose={() => setShowResultsView(false)}
-          onSelected={handleSelectedMovie}
+          onSelected={handleSelectedNomination}
         />
       )}
       {showRateMovie && selectedMovie && (
@@ -1383,19 +1454,49 @@ function buildCalendarDays(monthDate) {
   return days
 }
 
+function buildNominationDisplay(nomination) {
+  if (!nomination) return null
+  if (nomination.movie) return nomination.movie
+  return {
+    title: null,
+    genre: null,
+    description: null,
+    rt_score: null
+  }
+}
+
+function renderTheaterDetails(nomination) {
+  if (!nomination || nomination.nomination_type !== 'theater') return null
+  const details = []
+  if (nomination.theater_name) details.push(nomination.theater_name)
+  if (nomination.theater_notes) details.push(nomination.theater_notes)
+  if (details.length === 0) return null
+  return (
+    <span className="text-sm" style={{ color: '#fef3c7' }}>
+      {details.join(' | ')}
+    </span>
+  )
+}
+
 // ------------------------------------------------------------------
 // HELPER COMPONENTS (Paste these at the bottom of the file)
 // ------------------------------------------------------------------
 
 function NominationCard({ item, myVotes, handleVote, canRemove = false, onRemove }) {
-  const currentVote = myVotes[item.movie.id]
+  const currentVote = myVotes[item.id]
   const isTheater = item.nomination_type === 'theater'
+  const displayMovie = buildNominationDisplay(item)
   
   return (
     <div className={isTheater ? 'theater-card' : ''} style={{ borderRadius: '16px', marginBottom: '16px' }}>
         <MovieCard
-          movie={item.movie}
-          meta={isTheater ? <span style={{color: 'gold', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '5px'}}><Ticket size={14}/> THEATER TRIP</span> : null}
+          movie={displayMovie}
+          meta={isTheater ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span style={{color: 'gold', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '5px'}}><Ticket size={14}/> THEATER TRIP</span>
+              {renderTheaterDetails(item)}
+            </div>
+          ) : null}
           topRight={canRemove ? (
             <button
               onClick={() => onRemove?.(item)}
@@ -1408,9 +1509,9 @@ function NominationCard({ item, myVotes, handleVote, canRemove = false, onRemove
           ) : null}
         >
             <div style={{ display: 'flex', gap: '8px' }}>
-                <VoteBtn active={currentVote === 2} type="love" onClick={() => handleVote(item.movie.id, 2)} />
-                <VoteBtn active={currentVote === 1} type="up" onClick={() => handleVote(item.movie.id, 1)} />
-                <VoteBtn active={currentVote === -2} type="down" onClick={() => handleVote(item.movie.id, -2)} />
+                <VoteBtn active={currentVote === 2} type="love" onClick={() => handleVote(item.id, 2)} />
+                <VoteBtn active={currentVote === 1} type="up" onClick={() => handleVote(item.id, 1)} />
+                <VoteBtn active={currentVote === -2} type="down" onClick={() => handleVote(item.id, -2)} />
             </div>
         </MovieCard>
     </div>

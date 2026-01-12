@@ -44,19 +44,38 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
 
   async function calculateResults() {
     setLoading(true)
-    const { data: nominations } = await supabase.from('nominations').select('id, movie:movies (*)').eq('event_id', eventId)
-    const { data: votes } = await supabase.from('votes').select('movie_id, vote_type, profiles(display_name, username)').eq('event_id', eventId)
+    const { data: nominations } = await supabase
+      .from('nominations')
+      .select('id, nomination_type, theater_name, theater_notes, movie:movies (*)')
+      .eq('event_id', eventId)
+    const { data: votes } = await supabase
+      .from('votes')
+      .select('nomination_id, movie_id, vote_type, profiles(display_name, username)')
+      .eq('event_id', eventId)
     const nominationList = nominations || []
     const voteList = votes || []
+    const nominationIdByMovieId = new Map()
+    nominationList.forEach((nom) => {
+      if (nom.movie?.id) nominationIdByMovieId.set(nom.movie.id, nom.id)
+    })
 
     const processed = nominationList.map(nom => {
-      const movieVotes = voteList.filter(v => v.movie_id === nom.movie.id)
+      const movieVotes = voteList.filter(v => {
+        const matchId = v.nomination_id || nominationIdByMovieId.get(v.movie_id)
+        return matchId === nom.id
+      })
       const hearts = movieVotes.filter(v => v.vote_type === 2).length
       const likes = movieVotes.filter(v => v.vote_type === 1).length
       const dislikes = movieVotes.filter(v => v.vote_type === -2).length
+      const displayMovie = buildNominationDisplay(nom)
       
       return {
-        ...nom.movie,
+        ...displayMovie,
+        nomination_id: nom.id,
+        movie_id: nom.movie?.id || null,
+        nomination_type: nom.nomination_type,
+        theater_name: nom.theater_name,
+        theater_notes: nom.theater_notes,
         stats: {
           hearts, likes, dislikes,
           score: (hearts * 2) + likes - dislikes,
@@ -101,16 +120,16 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
     setDeciderPool(Array.from(unique.values()))
   }
 
-  async function selectMovie(movieId) {
-    if (!movieId || !hasNominations) return
-    setSelectingId(movieId)
+  async function selectNomination(nominationId, movieId) {
+    if (!nominationId || !hasNominations) return
+    setSelectingId(nominationId)
     const { error } = await supabase
       .from('events')
-      .update({ selected_movie_id: movieId })
+      .update({ selected_nomination_id: nominationId, selected_movie_id: movieId || null })
       .eq('id', eventId)
     setSelectingId(null)
     if (!error) {
-      if (onSelected) onSelected(movieId)
+      if (onSelected) onSelected({ nominationId, movieId })
       onClose()
     }
   }
@@ -284,7 +303,7 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
         {/* LEADERBOARD */}
         {isMovieRoulette && randomPick && (
           <motion.div
-            key={`${randomPick.id}-${spinTick}`}
+            key={`${randomPick.nomination_id}-${spinTick}`}
             initial={{ opacity: 0, y: 16, rotate: -1.5, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, rotate: 0, scale: 1 }}
             transition={{ type: 'spring', damping: 18, stiffness: 260 }}
@@ -296,11 +315,11 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
             <div style={{ marginTop: '6px', fontSize: '1.3rem', fontWeight: 800, color: 'gold' }}>{randomPick.title}</div>
             <div className="text-sm" style={{ marginTop: '4px' }}>Score: {randomPick.stats.score}</div>
             <button
-              onClick={(e) => { e.stopPropagation(); selectMovie(randomPick.id) }}
-              disabled={selectingId === randomPick.id}
+              onClick={(e) => { e.stopPropagation(); selectNomination(randomPick.nomination_id, randomPick.movie_id) }}
+              disabled={selectingId === randomPick.nomination_id}
               style={{ marginTop: '12px', background: '#00E5FF', color: 'black', width: '100%', padding: '12px', borderRadius: '12px', fontWeight: 700 }}
             >
-              {selectingId === randomPick.id ? 'Selecting...' : "Let's Watch This"}
+              {selectingId === randomPick.nomination_id ? 'Selecting...' : "Let's Watch This"}
             </button>
           </motion.div>
         )}
@@ -331,7 +350,7 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
           >
             {sortedList.map((movie) => (
               <motion.div
-                key={`decider-${movie.id}`}
+                key={`decider-${movie.nomination_id}`}
                 variants={{ hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } }}
                 className="glass-panel"
                 onClick={() => setActiveMovie(movie)}
@@ -351,12 +370,12 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
                     <div style={{ fontWeight: 'bold', fontSize: '1.05rem' }}>{movie.title}</div>
                     <div className="text-sm">Score: {movie.stats.score}</div>
                     <button
-                      onClick={(e) => { e.stopPropagation(); selectMovie(movie.id) }}
-                      disabled={selectingId === movie.id}
+                      onClick={(e) => { e.stopPropagation(); selectNomination(movie.nomination_id, movie.movie_id) }}
+                      disabled={selectingId === movie.nomination_id}
                       style={{ alignSelf: 'flex-start', background: 'rgba(0,229,255,0.2)', color: '#00E5FF', border: '1px solid rgba(0,229,255,0.5)', padding: '6px 10px', borderRadius: '999px', fontSize: '0.85rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}
                     >
                       <PlayCircle size={14} />
-                      {selectingId === movie.id ? 'Selecting...' : "Let's Watch This"}
+                      {selectingId === movie.nomination_id ? 'Selecting...' : "Let's Watch This"}
                     </button>
                   </div>
                 </div>
@@ -388,7 +407,7 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
                 const medal = place === 1 ? 'gold' : place === 2 ? '#c0c0c0' : place === 3 ? '#cd7f32' : null
                 return (
                   <motion.div
-                    key={movie.id}
+                    key={movie.nomination_id}
                     variants={{ hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } }}
                     className="glass-panel"
                     onClick={() => setActiveMovie(movie)}
@@ -407,12 +426,12 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
                           <div className="text-sm">Score: {movie.stats.score}</div>
                           {place <= topCount && (
                             <button
-                              onClick={(e) => { e.stopPropagation(); selectMovie(movie.id) }}
-                              disabled={selectingId === movie.id}
+                              onClick={(e) => { e.stopPropagation(); selectNomination(movie.nomination_id, movie.movie_id) }}
+                              disabled={selectingId === movie.nomination_id}
                               style={{ alignSelf: 'flex-start', background: 'rgba(0,229,255,0.2)', color: '#00E5FF', border: '1px solid rgba(0,229,255,0.5)', padding: '6px 10px', borderRadius: '999px', fontSize: '0.85rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}
                             >
                               <PlayCircle size={14} />
-                              {selectingId === movie.id ? 'Selecting...' : "Let's Watch This"}
+                              {selectingId === movie.nomination_id ? 'Selecting...' : "Let's Watch This"}
                             </button>
                           )}
                         </div>
@@ -478,6 +497,7 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
                 </div>
 
                 <div style={{ marginBottom: '16px', overflowY: 'auto' }}>
+                  {renderTheaterDetails(activeMovie)}
                   {activeMovie.description?.trim() && (
                     <p style={{ marginTop: 0, lineHeight: 1.5, color: '#cbd5e1' }}>
                       {activeMovie.description.trim()}
@@ -505,6 +525,31 @@ function Stat({ icon: Icon, val, color }) {
             <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: color }}>{val}</div>
         </div>
     )
+}
+
+function buildNominationDisplay(nomination) {
+  if (!nomination) return null
+  if (nomination.movie) return nomination.movie
+  if (nomination.title) return nomination
+  return {
+    title: null,
+    genre: null,
+    description: null,
+    rt_score: null
+  }
+}
+
+function renderTheaterDetails(entry) {
+  if (!entry || entry.nomination_type !== 'theater') return null
+  const details = []
+  if (entry.theater_name) details.push(entry.theater_name)
+  if (entry.theater_notes) details.push(entry.theater_notes)
+  if (details.length === 0) return null
+  return (
+    <div className="text-sm" style={{ color: '#fef3c7', marginBottom: '10px' }}>
+      {details.join(' | ')}
+    </div>
+  )
 }
 
 function VoteBreakdown({ movie }) {

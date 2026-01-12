@@ -183,9 +183,6 @@ export default function GroupView({ session }) {
             </button>
           </div>
         )}
-        <p className="text-sm" style={{ color: '#9ca3af', marginTop: '4px' }}>
-          A crew is your movie-night group. Share the join code or invite link to add friends.
-        </p>
         
         {/* MEMBERS & CODE ROW */}
         <div className="flex-between">
@@ -216,9 +213,6 @@ export default function GroupView({ session }) {
             {showCreate ? 'Cancel' : '+ New Event'}
         </button>
       </div>
-      <p className="text-sm" style={{ color: '#9ca3af', marginBottom: '12px' }}>
-        Events are planned movie nights for this crew. Add nominations and vote to choose a winner.
-      </p>
 
       {/* UPDATE CREATE EVENT SECTION FOR CALENDAR */}
       {showCreate && (

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ThumbsUp, ThumbsDown, Heart, Plus, Film, MapPin, Calendar, Clock, Ticket, ChevronLeft, Link as LinkIcon, Check, Users, Star, RotateCcw, ChevronDown, ChevronUp, X } from 'lucide-react'
+import { ThumbsUp, ThumbsDown, Heart, Plus, Film, MapPin, Calendar, Clock, Ticket, ChevronLeft, Link as LinkIcon, Check, Users, Star, RotateCcw, ChevronDown, ChevronUp, X, Minus } from 'lucide-react'
 import SearchMovies from './SearchMovies'
 import ResultsView from './ResultsView'
 import MovieCard from './MovieCard'
@@ -48,6 +48,7 @@ export default function EventView() {
   const [selectedMovie, setSelectedMovie] = useState(null)
   const [showRateMovie, setShowRateMovie] = useState(false)
   const [showDateTimePicker, setShowDateTimePicker] = useState(false)
+  const [showEventGuide, setShowEventGuide] = useState(true)
   const [pickedDate, setPickedDate] = useState(null)
   const [pickedTime, setPickedTime] = useState('')
   const [pickedPeriod, setPickedPeriod] = useState('PM')
@@ -59,6 +60,11 @@ export default function EventView() {
   useEffect(() => {
     if (code) loadData()
   }, [code])
+
+  useEffect(() => {
+    const dismissed = localStorage.getItem('eventGuideDismissed')
+    setShowEventGuide(dismissed !== 'true')
+  }, [])
 
   useEffect(() => {
     if (!showAttendees) return
@@ -393,9 +399,56 @@ export default function EventView() {
           )}
         </div>
       </div>
-      <p className="text-sm" style={{ color: '#9ca3af', marginTop: '-6px', marginBottom: '18px' }}>
-        Events are shared movie nights. Nominate options, vote with your crew, then select the winner.
-      </p>
+      {showEventGuide && (
+        <div style={{ position: 'relative', marginBottom: '14px', paddingTop: '8px', paddingRight: '12px' }}>
+          <div
+            style={{
+              padding: '14px',
+              borderRadius: '14px',
+              border: '1px dashed rgba(0,229,255,0.35)',
+              background: 'rgba(0,229,255,0.06)',
+              textAlign: 'center'
+            }}
+          >
+            <div style={{ fontWeight: 700, marginBottom: '6px', color: '#e2e8f0' }}>
+              This is a movie night event!
+            </div>
+            <div className="text-sm" style={{ color: '#cbd5e1' }}>
+              <div>Using events is easy. It is just three steps:</div>
+              <div style={{ marginTop: '6px' }}>1. Invite your friends.</div>
+              <div>2. Nominate some movies.</div>
+              <div>3. Select a movie based on peoples votes</div>
+              <div style={{ marginTop: '6px' }}>
+                Rate a movie after watching it to see it added to your profile.
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              localStorage.setItem('eventGuideDismissed', 'true')
+              setShowEventGuide(false)
+            }}
+            style={{
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              background: 'rgba(0,229,255,0.28)',
+              color: '#00E5FF',
+              borderRadius: '999px',
+              padding: '6px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 6px 16px rgba(0,229,255,0.2)'
+            }}
+            aria-label="Minimize event guide"
+            title="Dismiss"
+          >
+            <Minus size={14} />
+          </button>
+        </div>
+      )}
 
       {showEditEvent && (
         <div className="glass-panel" style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { LogOut, Plus, Users, Book, Search, Filter, Calendar, Clock, User, ChevronDown, ChevronUp, X } from 'lucide-react'
+import { LogOut, Plus, Users, Book, Search, Filter, Calendar, Clock, User, ChevronDown, ChevronUp, X, Minus } from 'lucide-react'
 import { supabase } from './supabaseClient'
 import SearchMovies from './SearchMovies'
 import MovieCard from './MovieCard'
@@ -35,6 +35,9 @@ export default function Dashboard({ session }) {
     const now = new Date()
     return new Date(now.getFullYear(), now.getMonth(), 1)
   })
+  const [showEventsGuide, setShowEventsGuide] = useState(true)
+  const [showCrewsGuide, setShowCrewsGuide] = useState(true)
+  const [showWatchlistGuide, setShowWatchlistGuide] = useState(true)
   const navigate = useNavigate()
   
   // Watchlist Local Search
@@ -51,6 +54,27 @@ export default function Dashboard({ session }) {
     getMyGroups()
     getMyWatchlist()
   }, [])
+
+  useEffect(() => {
+    if (!session?.user?.id) return
+    const key = `eventsGuideDismissed:${session.user.id}`
+    const dismissed = localStorage.getItem(key)
+    setShowEventsGuide(dismissed !== 'true')
+  }, [session])
+
+  useEffect(() => {
+    if (!session?.user?.id) return
+    const key = `crewsGuideDismissed:${session.user.id}`
+    const dismissed = localStorage.getItem(key)
+    setShowCrewsGuide(dismissed !== 'true')
+  }, [session])
+
+  useEffect(() => {
+    if (!session?.user?.id) return
+    const key = `watchlistGuideDismissed:${session.user.id}`
+    const dismissed = localStorage.getItem(key)
+    setShowWatchlistGuide(dismissed !== 'true')
+  }, [session])
 
   useEffect(() => {
     let isMounted = true
@@ -279,6 +303,9 @@ export default function Dashboard({ session }) {
   const commonGenres = COMMON_GENRES.filter(g => genres.includes(g))
   const visibleGenres = showAllGenres ? sortedGenres : commonGenres
   const groupNameById = Object.fromEntries(groups.map(g => [g.id, g.name]))
+  const eventsGuideKey = session?.user?.id ? `eventsGuideDismissed:${session.user.id}` : null
+  const crewsGuideKey = session?.user?.id ? `crewsGuideDismissed:${session.user.id}` : null
+  const watchlistGuideKey = session?.user?.id ? `watchlistGuideDismissed:${session.user.id}` : null
 
   return (
     <div style={{ paddingBottom: '40px', height: '100%', overflowY: 'auto' }}>
@@ -318,10 +345,50 @@ export default function Dashboard({ session }) {
       <AnimatePresence mode="wait">
         {activeTab === 'groups' ? (
           <motion.div key="groups" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
-             <p className="text-sm" style={{ color: '#9ca3af', marginBottom: '14px' }}>
-               Crews are your movie-night groups. Share a join code to bring friends in.
-             </p>
-             
+             {showCrewsGuide && (
+               <div style={{ position: 'relative', marginBottom: '14px', paddingTop: '8px', paddingRight: '12px' }}>
+                 <div
+                   style={{
+                     padding: '14px',
+                     borderRadius: '14px',
+                     border: '1px dashed rgba(0,229,255,0.35)',
+                     background: 'rgba(0,229,255,0.06)',
+                     textAlign: 'center'
+                   }}
+                 >
+                   <div style={{ fontWeight: 700, marginBottom: '6px', color: '#e2e8f0' }}>
+                     This is where you can see your movie night Crews.
+                   </div>
+                   <div className="text-sm" style={{ color: '#cbd5e1' }}>
+                     A crew is a group of users you plan your movie nights with. Use a crew to make repeat movie nights easier
+                   </div>
+                 </div>
+                 <button
+                   type="button"
+                   onClick={() => {
+                     if (crewsGuideKey) localStorage.setItem(crewsGuideKey, 'true')
+                     setShowCrewsGuide(false)
+                   }}
+                   style={{
+                     position: 'absolute',
+                     top: 0,
+                     right: 0,
+                     background: 'rgba(0,229,255,0.28)',
+                     color: '#00E5FF',
+                     borderRadius: '999px',
+                     padding: '6px',
+                     display: 'inline-flex',
+                     alignItems: 'center',
+                     justifyContent: 'center',
+                     boxShadow: '0 6px 16px rgba(0,229,255,0.2)'
+                   }}
+                   aria-label="Minimize crews guide"
+                   title="Dismiss"
+                 >
+                   <Minus size={14} />
+                 </button>
+               </div>
+             )}
              {/* NEW CREW BUTTON */}
              <button onClick={() => setShowCreateGroup(!showCreateGroup)} style={{ width: '100%', marginBottom: '15px', background: 'var(--primary)', color: 'white', padding: '12px', borderRadius: '12px' }}>
                 {showCreateGroup ? 'Cancel' : '+ Start New Crew'}
@@ -378,27 +445,74 @@ export default function Dashboard({ session }) {
                 </div>
              )}
 
-             {groups.map(g => (
-               <Link key={g.id} to={`/group/${g.id}`} style={{ textDecoration: 'none' }}>
-                 <div className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px', marginBottom: '12px' }}>
-                    <div>
-                      <div style={{ fontWeight: '600', fontSize: '1.1rem', color: 'white' }}>{g.name}</div>
-                      <div className="text-sm">
-                        {groupMemberPreview[g.id]?.length
-                          ? `${groupMemberPreview[g.id].join(', ')}${groupMemberPreview[g.id].length === 3 ? '...' : ''}`
-                          : 'No members yet'}
+             {groups.length === 0 ? (
+               <p className="text-sm" style={{ textAlign: 'center', color: '#9ca3af' }}>
+                 Not currently in any crews.
+               </p>
+             ) : (
+               groups.map(g => (
+                 <Link key={g.id} to={`/group/${g.id}`} style={{ textDecoration: 'none' }}>
+                   <div className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px', marginBottom: '12px' }}>
+                      <div>
+                        <div style={{ fontWeight: '600', fontSize: '1.1rem', color: 'white' }}>{g.name}</div>
+                        <div className="text-sm">
+                          {groupMemberPreview[g.id]?.length
+                            ? `${groupMemberPreview[g.id].join(', ')}${groupMemberPreview[g.id].length === 3 ? '...' : ''}`
+                            : 'No members yet'}
+                        </div>
                       </div>
-                    </div>
-                    <span style={{ color: 'var(--text-muted)' }}>→</span>
-                 </div>
-               </Link>
-             ))}
+                      <span style={{ color: 'var(--text-muted)' }}>→</span>
+                   </div>
+                 </Link>
+               ))
+             )}
           </motion.div>
         ) : activeTab === 'events' ? (
           <motion.div key="events" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
-            <p className="text-sm" style={{ color: '#9ca3af', marginBottom: '14px' }}>
-              Events are planned movie nights. Add nominations, then vote to pick what to watch.
-            </p>
+            {showEventsGuide && (
+              <div style={{ position: 'relative', marginBottom: '14px', paddingTop: '8px', paddingRight: '12px' }}>
+                <div
+                  style={{
+                    padding: '14px',
+                    borderRadius: '14px',
+                    border: '1px dashed rgba(0,229,255,0.35)',
+                    background: 'rgba(0,229,255,0.06)',
+                    textAlign: 'center'
+                  }}
+                >
+                  <div style={{ fontWeight: 700, marginBottom: '6px', color: '#e2e8f0' }}>
+                    This is where you can see all of your events
+                  </div>
+                  <div className="text-sm" style={{ color: '#cbd5e1' }}>
+                    An event is an upcoming movie night. You can invite people to events using the event link
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (eventsGuideKey) localStorage.setItem(eventsGuideKey, 'true')
+                    setShowEventsGuide(false)
+                  }}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    right: 0,
+                    background: 'rgba(0,229,255,0.28)',
+                    color: '#00E5FF',
+                    borderRadius: '999px',
+                    padding: '6px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: '0 6px 16px rgba(0,229,255,0.2)'
+                  }}
+                  aria-label="Minimize events guide"
+                  title="Dismiss"
+                >
+                  <Minus size={14} />
+                </button>
+              </div>
+            )}
             <button onClick={() => setShowCreateEvent(!showCreateEvent)} style={{ width: '100%', marginBottom: '15px', background: 'var(--primary)', color: 'white', padding: '12px', borderRadius: '12px' }}>
               {showCreateEvent ? 'Cancel' : '+ New Event'}
             </button>
@@ -436,7 +550,9 @@ export default function Dashboard({ session }) {
             )}
 
             {events.length === 0 ? (
-              <p className="text-sm" style={{ textAlign: 'center' }}>No upcoming events yet.</p>
+              <p className="text-sm" style={{ textAlign: 'center', color: '#9ca3af' }}>
+                You have no upcoming events yet.
+              </p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {events.map(event => (
@@ -462,10 +578,50 @@ export default function Dashboard({ session }) {
           </motion.div>
         ) : (
           <motion.div key="watchlist" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-              <p className="text-sm" style={{ color: '#9ca3af', marginBottom: '12px' }}>
-                Your watchlist is a personal queue you can nominate from later.
-              </p>
-              
+              {showWatchlistGuide && (
+                <div style={{ position: 'relative', marginBottom: '14px', paddingTop: '8px', paddingRight: '12px' }}>
+                  <div
+                    style={{
+                      padding: '14px',
+                      borderRadius: '14px',
+                      border: '1px dashed rgba(0,229,255,0.35)',
+                      background: 'rgba(0,229,255,0.06)',
+                      textAlign: 'center'
+                    }}
+                  >
+                    <div style={{ fontWeight: 700, marginBottom: '6px', color: '#e2e8f0' }}>
+                      This is your watchlist
+                    </div>
+                    <div className="text-sm" style={{ color: '#cbd5e1' }}>
+                      This is where you can add movies you actively want to watch. Having movies in your watchlist makes it easier for you and your friends to nominate them for a movie night
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (watchlistGuideKey) localStorage.setItem(watchlistGuideKey, 'true')
+                      setShowWatchlistGuide(false)
+                    }}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      right: 0,
+                      background: 'rgba(0,229,255,0.28)',
+                      color: '#00E5FF',
+                      borderRadius: '999px',
+                      padding: '6px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: '0 6px 16px rgba(0,229,255,0.2)'
+                    }}
+                    aria-label="Minimize watchlist guide"
+                    title="Dismiss"
+                  >
+                    <Minus size={14} />
+                  </button>
+                </div>
+              )}
               {/* WATCHLIST ACTION BAR */}
               <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
                   <div style={{ position: 'relative', flex: 1 }}>

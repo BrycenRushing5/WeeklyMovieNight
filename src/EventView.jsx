@@ -56,6 +56,9 @@ export default function EventView() {
     const now = new Date()
     return new Date(now.getFullYear(), now.getMonth(), 1)
   })
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false)
+  const [showCreatorLeaveConfirm, setShowCreatorLeaveConfirm] = useState(false)
+  const [leavingEvent, setLeavingEvent] = useState(false)
   const isCreator = userId && event?.created_by === userId
   const canEditEvent = Boolean(userId)
 
@@ -119,6 +122,9 @@ export default function EventView() {
           votes?.forEach(v => voteMap[v.movie_id] = v.vote_type)
           setMyVotes(voteMap)
           fetchMyGroups(user.id)
+          await supabase
+            .from('event_attendees')
+            .upsert([{ event_id: code, user_id: user.id }], { onConflict: 'event_id, user_id' })
       }
     } catch (err) {
       console.error(err)
@@ -232,6 +238,52 @@ export default function EventView() {
       return
     }
     setShowDeleteConfirm(false)
+    navigate(event?.group_id ? `/group/${event.group_id}` : `/`)
+  }
+
+  async function handleLeaveEvent() {
+    setLeavingEvent(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      setLeavingEvent(false)
+      return
+    }
+
+    const { data: nominations } = await supabase
+      .from('nominations')
+      .select('movie_id')
+      .eq('event_id', code)
+      .eq('nominated_by', user.id)
+    const movieIds = (nominations || []).map(n => n.movie_id)
+
+    await supabase
+      .from('nominations')
+      .delete()
+      .eq('event_id', code)
+      .eq('nominated_by', user.id)
+
+    if (movieIds.length > 0) {
+      await supabase
+        .from('votes')
+        .delete()
+        .eq('event_id', code)
+        .in('movie_id', movieIds)
+    }
+
+    await supabase
+      .from('votes')
+      .delete()
+      .eq('event_id', code)
+      .eq('user_id', user.id)
+
+    await supabase
+      .from('event_attendees')
+      .delete()
+      .eq('event_id', code)
+      .eq('user_id', user.id)
+
+    setLeavingEvent(false)
+    setShowLeaveConfirm(false)
     navigate(event?.group_id ? `/group/${event.group_id}` : `/`)
   }
 
@@ -379,7 +431,8 @@ export default function EventView() {
               )}
               <button
                 onClick={() => setShowAttendees(prev => !prev)}
-                style={{ background: showAttendees ? 'rgba(0,229,255,0.2)' : 'rgba(255,255,255,0.08)', color: showAttendees ? '#00E5FF' : 'white', padding: '6px 10px', borderRadius: '999px', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, whiteSpace: 'nowrap' }}
+                style={{ background: showAttendees ? 'rgba(0,229,255,0.2)' : 'rgba(255,255,255,0.08)', color: showAttendees ? '#00E5FF' : 'white', padding: '6px 10px', borderRadius: '999px', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0, minWidth: '118px', justifyContent: 'center' }}
+                aria-pressed={showAttendees}
               >
                 <Users size={16} /> {showAttendees ? 'Hide Guests' : 'Guests'}
               </button>
@@ -397,6 +450,14 @@ export default function EventView() {
               style={{ background: showEditEvent ? 'rgba(0,229,255,0.2)' : 'rgba(255,255,255,0.08)', color: showEditEvent ? '#00E5FF' : 'white', padding: '8px 12px', borderRadius: '999px', fontWeight: 600, whiteSpace: 'nowrap' }}
             >
               {showEditEvent ? 'Done' : 'Edit'}
+            </button>
+          )}
+          {userId && (
+            <button
+              onClick={() => (isCreator ? setShowCreatorLeaveConfirm(true) : setShowLeaveConfirm(true))}
+              style={{ background: 'rgba(255,77,109,0.15)', color: '#ff4d6d', padding: '8px 12px', borderRadius: '999px', fontWeight: 600, whiteSpace: 'nowrap' }}
+            >
+              Leave
             </button>
           )}
         </div>
@@ -808,6 +869,76 @@ export default function EventView() {
                 </button>
                 <button onClick={handleDeleteEvent} style={{ flex: 1, background: '#ff4d6d', color: 'white', padding: '10px', borderRadius: '12px', fontWeight: 700 }}>
                   Delete
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showLeaveConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{ position: 'fixed', inset: 0, zIndex: 2200, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(5px)' }}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.96, opacity: 0 }}
+              transition={{ type: 'spring', damping: 20, stiffness: 300 }}
+              style={{ width: '90%', maxWidth: '420px', background: '#1a1a2e', borderRadius: '20px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}
+            >
+              <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>Leave this event?</div>
+              <p className="text-sm" style={{ color: '#bbb', margin: 0 }}>
+                This removes you from the guest list and clears your nominations for this event.
+              </p>
+              <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+                <button onClick={() => setShowLeaveConfirm(false)} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', color: 'white', padding: '10px', borderRadius: '12px', fontWeight: 700 }}>
+                  Cancel
+                </button>
+                <button onClick={handleLeaveEvent} style={{ flex: 1, background: '#ff4d6d', color: 'white', padding: '10px', borderRadius: '12px', fontWeight: 700 }} disabled={leavingEvent}>
+                  {leavingEvent ? 'Leaving...' : 'Leave Event'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showCreatorLeaveConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{ position: 'fixed', inset: 0, zIndex: 2200, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(5px)' }}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.96, opacity: 0 }}
+              transition={{ type: 'spring', damping: 20, stiffness: 300 }}
+              style={{ width: '90%', maxWidth: '420px', background: '#1a1a2e', borderRadius: '20px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}
+            >
+              <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>You created this event</div>
+              <p className="text-sm" style={{ color: '#bbb', margin: 0 }}>
+                Leaving will delete the event for everyone and remove all nominations.
+              </p>
+              <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+                <button onClick={() => setShowCreatorLeaveConfirm(false)} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', color: 'white', padding: '10px', borderRadius: '12px', fontWeight: 700 }}>
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    setShowCreatorLeaveConfirm(false)
+                    handleDeleteEvent()
+                  }}
+                  style={{ flex: 1, background: '#ff4d6d', color: 'white', padding: '10px', borderRadius: '12px', fontWeight: 700 }}
+                >
+                  Delete Event
                 </button>
               </div>
             </motion.div>

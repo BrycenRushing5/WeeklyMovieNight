@@ -14,6 +14,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
   const [watchlistScope, setWatchlistScope] = useState('mine')
   const [genres, setGenres] = useState(DEFAULT_GENRES)
   const searchRequestId = useRef(0)
+  const searchInputRef = useRef(null)
   
   // Lists
   const [myWatchlist, setMyWatchlist] = useState([])
@@ -95,6 +96,13 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
     }
     if (requestId !== searchRequestId.current) return
     setResults(applyFilters(data || [], { skipSearchMatch: Boolean(searchTerm) }))
+  }
+
+  function handleSearchSubmit(e) {
+    e.preventDefault()
+    searchMovies()
+    setShowFilters(false)
+    searchInputRef.current?.blur()
   }
 
   // 2. MY WATCHLIST
@@ -282,13 +290,36 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
         {/* FILTERS (Shared across lists) */}
         {activeTab !== 'theater' && !isWritingIn && (
             <div style={{ marginBottom: '15px', padding: '10px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px' }}>
-                <div className="flex-between" onClick={() => setShowFilters(!showFilters)}>
-                    <div style={{display:'flex', gap:'10px', alignItems:'center'}}>
+                <form className="flex-between" onSubmit={handleSearchSubmit}>
+                    <div style={{display:'flex', gap:'10px', alignItems:'center', flex: 1}}>
                         <Search size={16} color="#888"/>
-                        <input placeholder="Search list..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{background:'transparent', border:'none', padding:0, height:'auto'}}/>
+                        <input
+                          ref={searchInputRef}
+                          type="text"
+                          enterKeyHint="search"
+                          placeholder="Search list..."
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          style={{background:'transparent', border:'none', padding:0, height:'auto', width: '100%'}}
+                        />
+                        {searchTerm && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSearchTerm('')
+                              searchInputRef.current?.focus()
+                            }}
+                            style={{ background: 'rgba(255,255,255,0.08)', border: 'none', color: '#cbd5e1', padding: '4px', borderRadius: '999px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                            aria-label="Clear search"
+                          >
+                            <X size={14} />
+                          </button>
+                        )}
                     </div>
-                    <Filter size={16} color={showFilters ? '#00E5FF' : '#666'} />
-                </div>
+                    <button type="button" onClick={() => setShowFilters(!showFilters)} style={{ background: 'none', padding: '4px', marginLeft: '6px', display: 'inline-flex', alignItems: 'center' }}>
+                      <Filter size={16} color={showFilters ? '#00E5FF' : '#666'} />
+                    </button>
+                </form>
                 {showFilters && (
                     <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #333' }}>
                          <div style={{ marginBottom: '10px' }}>

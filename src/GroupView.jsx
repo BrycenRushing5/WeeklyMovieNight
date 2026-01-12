@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from './supabaseClient'
-import { Calendar, MapPin, Plus, ArrowRight, Users, Copy, Check, Clock } from 'lucide-react'
+import { Calendar, MapPin, Plus, ArrowRight, Users, Check, Clock, Link as LinkIcon } from 'lucide-react'
 import { ChevronLeft } from 'lucide-react' // Add Icon
 import { useNavigate } from 'react-router-dom' // Add Hook
 
@@ -14,6 +14,8 @@ export default function GroupView({ session }) {
   const [showCreate, setShowCreate] = useState(false)
   const [isEditingName, setIsEditingName] = useState(false)
   const [editedGroupName, setEditedGroupName] = useState('')
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false)
+  const [leavingCrew, setLeavingCrew] = useState(false)
   
   // Create Event State
   const [newEventTitle, setNewEventTitle] = useState('')
@@ -149,24 +151,47 @@ export default function GroupView({ session }) {
     setTimeout(() => setCopied(false), 2000)
   }
 
+  async function handleLeaveCrew() {
+    if (!session?.user) return
+    setLeavingCrew(true)
+    const { error } = await supabase
+      .from('group_members')
+      .delete()
+      .eq('group_id', groupId)
+      .eq('user_id', session.user.id)
+    setLeavingCrew(false)
+    if (error) {
+      alert(`Error: ${error.message}`)
+      return
+    }
+    setShowLeaveConfirm(false)
+    navigate('/')
+  }
+
   if (!group) return <div style={{padding: '20px'}}>Loading Group...</div>
 
   return (
     <>
-    <div style={{ padding: '20px', paddingBottom: '80px', height: '100%', overflowY: 'auto' }}>
+    <div style={{ padding: '16px', paddingBottom: '80px', height: '100%', overflowY: 'auto' }}>
       {/* BACK BUTTON */}
       <button onClick={() => navigate('/')} style={{ background: 'none', color: '#888', padding: 0, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '5px' }}>
         <ChevronLeft size={20} /> Back to Dashboard
       </button>
-    <div style={{ padding: '20px', paddingBottom: '80px' }}>
       {/* HEADER */}
       <div style={{ marginBottom: '30px' }}>
         {!isEditingName ? (
           <div className="flex-between" style={{ gap: '10px', alignItems: 'center' }}>
             <h1 style={{ fontSize: '2.5rem', marginBottom: '10px' }}>{group.name}</h1>
-            <button onClick={() => setIsEditingName(true)} style={{ background: 'rgba(255,255,255,0.1)', color: 'white', padding: '8px 12px', borderRadius: '10px' }}>
-              Edit
-            </button>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button onClick={() => setIsEditingName(true)} style={{ background: 'rgba(255,255,255,0.1)', color: 'white', padding: '8px 12px', borderRadius: '10px' }}>
+                Edit
+              </button>
+              {session?.user && (
+                <button onClick={() => setShowLeaveConfirm(true)} style={{ background: 'rgba(255,77,109,0.15)', color: '#ff4d6d', padding: '8px 12px', borderRadius: '10px' }}>
+                  Leave
+                </button>
+              )}
+            </div>
           </div>
         ) : (
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '10px' }}>
@@ -185,26 +210,43 @@ export default function GroupView({ session }) {
         )}
         
         {/* MEMBERS & CODE ROW */}
-        <div className="flex-between">
-           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <div className="flex-gap text-sm" style={{ background: 'rgba(255,255,255,0.1)', padding: '6px 12px', borderRadius: '20px' }}>
-                <Users size={16} /> 
-                {members.length} Members: {members.slice(0, 3).join(', ')}{members.length > 3 && '...'}
-              </div>
-              {group?.share_code && (
-                <div className="text-sm" style={{ color: '#9ca3af', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.14em' }}>Join code</span>
-                  <span style={{ fontWeight: 600, letterSpacing: '0.12em' }}>{group.share_code}</span>
-                </div>
-              )}
-           </div>
-           
-           <button onClick={handleCopy} className="flex-gap" style={{ background: 'none', color: '#00E5FF' }}>
-              {copied ? <Check size={18} /> : <Copy size={18} />} 
-              {copied ? 'Copied' : 'Invite Link'}
-           </button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div className="flex-between" style={{ gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <div className="flex-gap text-sm" style={{ background: 'rgba(255,255,255,0.1)', padding: '6px 12px', borderRadius: '999px', fontWeight: 600 }}>
+              <Users size={16} /> 
+              {members.length} Members
+            </div>
+            <button
+              onClick={handleCopy}
+              style={{ background: 'rgba(255,255,255,0.1)', color: 'white', padding: '10px 14px', borderRadius: '999px', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}
+            >
+              {copied ? <Check size={18} /> : <LinkIcon size={18} />}
+              {copied ? 'Copied' : 'Invite'}
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            {members.length === 0 ? (
+              <span className="text-sm" style={{ color: '#9ca3af' }}>No members yet.</span>
+            ) : (
+              members.map((name, idx) => (
+                <span key={`${name}-${idx}`} style={{ background: 'rgba(255,255,255,0.08)', padding: '6px 10px', borderRadius: '999px', fontSize: '0.85rem', fontWeight: 600, color: '#e2e8f0' }}>
+                  {name}
+                </span>
+              ))
+            )}
+          </div>
+
+          {group?.share_code && (
+            <div className="text-sm" style={{ color: '#9ca3af', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.14em' }}>Join code</span>
+              <span style={{ fontWeight: 600, letterSpacing: '0.12em' }}>{group.share_code}</span>
+            </div>
+          )}
         </div>
       </div>
+
+      <div style={{ height: '1px', background: 'rgba(255,255,255,0.08)', margin: '16px 0 20px' }} />
 
       {/* EVENTS LIST */}
       <div className="flex-between" style={{ marginBottom: '15px' }}>
@@ -213,6 +255,25 @@ export default function GroupView({ session }) {
             {showCreate ? 'Cancel' : '+ New Event'}
         </button>
       </div>
+
+      {showLeaveConfirm && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 2200, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(5px)' }}>
+          <div style={{ width: '90%', maxWidth: '420px', background: '#1a1a2e', borderRadius: '20px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>Leave this crew?</div>
+            <p className="text-sm" style={{ color: '#bbb', margin: 0 }}>
+              You will need a new invite from a crew member to rejoin.
+            </p>
+            <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+              <button onClick={() => setShowLeaveConfirm(false)} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', color: 'white', padding: '10px', borderRadius: '12px', fontWeight: 700 }}>
+                Cancel
+              </button>
+              <button onClick={handleLeaveCrew} style={{ flex: 1, background: '#ff4d6d', color: 'white', padding: '10px', borderRadius: '12px', fontWeight: 700 }} disabled={leavingCrew}>
+                {leavingCrew ? 'Leaving...' : 'Leave Crew'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* UPDATE CREATE EVENT SECTION FOR CALENDAR */}
       {showCreate && (
@@ -268,7 +329,6 @@ export default function GroupView({ session }) {
             ))}
         </div>
       )}
-    </div>
     </div>
     <DateTimePickerSheet
       show={showDateTimePicker}

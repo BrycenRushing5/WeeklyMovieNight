@@ -9,18 +9,24 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
   const [selectingId, setSelectingId] = useState(null)
   
   // Selection Logic
-  const [method, setMethod] = useState('score') // 'score', 'loved', 'approval', 'random'
+  const [method, setMethod] = useState('score') // 'score', 'loved', 'approval', 'movie_random', 'decider_random'
   const [ignoreDislikes, setIgnoreDislikes] = useState(false)
   const [revealResults, setRevealResults] = useState(false)
   const [randomPick, setRandomPick] = useState(null)
+  const [deciderPick, setDeciderPick] = useState(null)
+  const [deciderPool, setDeciderPool] = useState([])
   const [activeMovie, setActiveMovie] = useState(null)
   const [spinTick, setSpinTick] = useState(0)
   const [showSelectionGuide, setShowSelectionGuide] = useState(true)
   const hasNominations = movies.length > 0
   const isReady = !loading && hasNominations
+  const isMovieRoulette = method === 'movie_random'
+  const isDeciderRoulette = method === 'decider_random'
+  const isRoulette = isMovieRoulette || isDeciderRoulette
   
   useEffect(() => {
     calculateResults()
+    loadDeciders()
     const sub = supabase.channel('votes').on('postgres_changes', { event: '*', schema: 'public', table: 'votes' }, calculateResults).subscribe()
     return () => supabase.removeChannel(sub)
   }, [eventId])
@@ -33,6 +39,7 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
   useEffect(() => {
     setRevealResults(false)
     setRandomPick(null)
+    setDeciderPick(null)
   }, [method, ignoreDislikes])
 
   async function calculateResults() {
@@ -66,6 +73,34 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
     setLoading(false)
   }
 
+  async function loadDeciders() {
+    if (!eventId) return
+    const { data: eventData } = await supabase
+      .from('events')
+      .select('group_id')
+      .eq('id', eventId)
+      .single()
+    let members = []
+    if (eventData?.group_id) {
+      const { data } = await supabase
+        .from('group_members')
+        .select('user_id, profiles(display_name, username)')
+        .eq('group_id', eventData.group_id)
+      members = data || []
+    } else {
+      const { data } = await supabase
+        .from('event_attendees')
+        .select('user_id, profiles(display_name, username)')
+        .eq('event_id', eventId)
+      members = data || []
+    }
+    const unique = new Map()
+    members.forEach(m => {
+      if (m?.user_id && !unique.has(m.user_id)) unique.set(m.user_id, m)
+    })
+    setDeciderPool(Array.from(unique.values()))
+  }
+
   async function selectMovie(movieId) {
     if (!movieId || !hasNominations) return
     setSelectingId(movieId)
@@ -89,7 +124,7 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
         list = list.filter(m => m.stats.dislikes === 0)
     }
 
-    if (method === 'random') {
+    if (isRoulette) {
         // We don't resort random, we just pick one. 
         // But for UI, let's just shuffle them visually.
         // In a real app, you'd hit "Spin" and it would pick one index.
@@ -112,8 +147,14 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
   // Handle Random Pick Button
   const handleRandomPick = () => {
      if (sortedList.length === 0) return alert("No movies to pick from!")
-     const random = sortedList[Math.floor(Math.random() * sortedList.length)]
-     setRandomPick(random)
+     if (isDeciderRoulette) {
+       if (deciderPool.length === 0) return alert("No deciders available yet!")
+       const pick = deciderPool[Math.floor(Math.random() * deciderPool.length)]
+       setDeciderPick(pick)
+     } else {
+       const random = sortedList[Math.floor(Math.random() * sortedList.length)]
+       setRandomPick(random)
+     }
      setSpinTick(prev => prev + 1)
   }
 
@@ -192,7 +233,8 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
                     <option value="score">Highest Score (Weighted)</option>
                     <option value="loved">Most Loved (Hearts)</option>
                     <option value="approval">Most Approved (No Dislikes)</option>
-                    <option value="random">Random Roulette</option>
+                    <option value="movie_random">Movie Roulette</option>
+                    <option value="decider_random">Decider Roulette</option>
                 </select>
             </div>
             
@@ -201,7 +243,7 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
                 <input className="toggle" type="checkbox" checked={ignoreDislikes} onChange={(e) => setIgnoreDislikes(e.target.checked)} />
             </div>
 
-            {method === 'random' && (
+            {isRoulette && (
                 <motion.button
                   onClick={() => isReady && handleRandomPick()}
                   disabled={!isReady}
@@ -218,10 +260,10 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
                     >
                       <Shuffle size={20}/>
                     </motion.span>
-                    SPIN THE WHEEL
+                    {isDeciderRoulette ? 'PICK A DECIDER' : 'SPIN THE WHEEL'}
                 </motion.button>
             )}
-            {method !== 'random' && (
+            {!isRoulette && (
                 <button
                   onClick={() => isReady && setRevealResults(true)}
                   disabled={!isReady}
@@ -240,7 +282,7 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
         )}
 
         {/* LEADERBOARD */}
-        {method === 'random' && randomPick && (
+        {isMovieRoulette && randomPick && (
           <motion.div
             key={`${randomPick.id}-${spinTick}`}
             initial={{ opacity: 0, y: 16, rotate: -1.5, scale: 0.98 }}
@@ -260,6 +302,71 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
             >
               {selectingId === randomPick.id ? 'Selecting...' : "Let's Watch This"}
             </button>
+          </motion.div>
+        )}
+        {isDeciderRoulette && deciderPick && (
+          <motion.div
+            key={`${deciderPick.user_id || 'decider'}-${spinTick}`}
+            initial={{ opacity: 0, y: 16, rotate: -1.5, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, rotate: 0, scale: 1 }}
+            transition={{ type: 'spring', damping: 18, stiffness: 260 }}
+            className="glass-panel"
+            style={{ marginBottom: '16px', borderLeft: '4px solid #00E5FF' }}
+          >
+            <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>Tonight's Decider</div>
+            <div style={{ marginTop: '6px', fontSize: '1.3rem', fontWeight: 800, color: '#00E5FF' }}>
+              {deciderPick.profiles?.display_name || deciderPick.profiles?.username || 'Movie Fan'}
+            </div>
+            <div className="text-sm" style={{ marginTop: '6px', color: '#cbd5e1' }}>
+              Pick a movie from the list below.
+            </div>
+          </motion.div>
+        )}
+        {isDeciderRoulette && deciderPick && (
+          <motion.div
+            initial="hidden"
+            animate="show"
+            variants={{ show: { transition: { staggerChildren: 0.08 } } }}
+            style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
+          >
+            {sortedList.map((movie) => (
+              <motion.div
+                key={`decider-${movie.id}`}
+                variants={{ hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } }}
+                className="glass-panel"
+                onClick={() => setActiveMovie(movie)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '16px',
+                  borderRadius: '16px',
+                  background: 'rgba(255,255,255,0.03)',
+                  borderLeft: '4px solid transparent',
+                  cursor: 'pointer'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ fontWeight: 'bold', fontSize: '1.05rem' }}>{movie.title}</div>
+                    <div className="text-sm">Score: {movie.stats.score}</div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); selectMovie(movie.id) }}
+                      disabled={selectingId === movie.id}
+                      style={{ alignSelf: 'flex-start', background: 'rgba(0,229,255,0.2)', color: '#00E5FF', border: '1px solid rgba(0,229,255,0.5)', padding: '6px 10px', borderRadius: '999px', fontSize: '0.85rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      <PlayCircle size={14} />
+                      {selectingId === movie.id ? 'Selecting...' : "Let's Watch This"}
+                    </button>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <Stat icon={Heart} val={movie.stats.hearts} color="#FF4D9A" />
+                  <Stat icon={ThumbsUp} val={movie.stats.likes} color="#00E5FF" />
+                  <Stat icon={ThumbsDown} val={movie.stats.dislikes} color="#FF4D6D" />
+                </div>
+              </motion.div>
+            ))}
           </motion.div>
         )}
         {revealResults && (
@@ -321,7 +428,7 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
               })}
           </motion.div>
         )}
-        {!revealResults && method !== 'random' && (
+        {!revealResults && !isRoulette && (
           <div className="text-sm" style={{ textAlign: 'center', color: '#888' }}>
             Ready to reveal? Tap the button above.
           </div>

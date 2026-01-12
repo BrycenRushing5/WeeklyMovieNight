@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { LogOut, Plus, Users, Book, Search, Filter, Calendar, Clock, User, ChevronDown, ChevronUp, X, Minus } from 'lucide-react'
@@ -38,6 +38,9 @@ export default function Dashboard({ session }) {
   const [showEventsGuide, setShowEventsGuide] = useState(true)
   const [showCrewsGuide, setShowCrewsGuide] = useState(true)
   const [showWatchlistGuide, setShowWatchlistGuide] = useState(true)
+  const [showEventsHint, setShowEventsHint] = useState(false)
+  const [showCrewsHint, setShowCrewsHint] = useState(false)
+  const [showWatchlistHint, setShowWatchlistHint] = useState(false)
   const navigate = useNavigate()
   
   // Watchlist Local Search
@@ -47,6 +50,10 @@ export default function Dashboard({ session }) {
   const [showAllGenres, setShowAllGenres] = useState(false)
   const [watchMinScore, setWatchMinScore] = useState(70)
   const [useWatchScore, setUseWatchScore] = useState(false)
+
+  const eventsListRef = useRef(null)
+  const crewsListRef = useRef(null)
+  const watchlistListRef = useRef(null)
 
   const username = session.user.user_metadata.username
 
@@ -307,9 +314,52 @@ export default function Dashboard({ session }) {
   const crewsGuideKey = session?.user?.id ? `crewsGuideDismissed:${session.user.id}` : null
   const watchlistGuideKey = session?.user?.id ? `watchlistGuideDismissed:${session.user.id}` : null
 
+  const updateScrollHint = (el, setHint) => {
+    if (!el) return
+    const hasOverflow = el.scrollHeight - el.clientHeight > 4
+    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 2
+    setHint(hasOverflow && !atBottom)
+  }
+
+  useEffect(() => {
+    const el = eventsListRef.current
+    if (!el) return
+    const handle = () => updateScrollHint(el, setShowEventsHint)
+    const raf = requestAnimationFrame(handle)
+    window.addEventListener('resize', handle)
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('resize', handle)
+    }
+  }, [events.length, activeTab])
+
+  useEffect(() => {
+    const el = crewsListRef.current
+    if (!el) return
+    const handle = () => updateScrollHint(el, setShowCrewsHint)
+    const raf = requestAnimationFrame(handle)
+    window.addEventListener('resize', handle)
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('resize', handle)
+    }
+  }, [groups.length, activeTab])
+
+  useEffect(() => {
+    const el = watchlistListRef.current
+    if (!el) return
+    const handle = () => updateScrollHint(el, setShowWatchlistHint)
+    const raf = requestAnimationFrame(handle)
+    window.addEventListener('resize', handle)
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('resize', handle)
+    }
+  }, [filteredWatchlist.length, activeTab, watchFilter, watchGenres, showAllGenres, watchMinScore, useWatchScore])
+
 
   return (
-    <div style={{ paddingBottom: '40px', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div style={{ paddingBottom: '12px', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* HEADER */}
       <div className="flex-between" style={{ marginBottom: '30px' }}>
         <div>
@@ -447,8 +497,18 @@ export default function Dashboard({ session }) {
                 </div>
              )}
 
-             <div style={{ flex: 1, minHeight: 0 }}>
-               <div style={{ height: '100%', overflowY: 'auto', paddingRight: '12px', paddingBottom: '8px', scrollbarGutter: 'stable' }}>
+             <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+               {showCrewsHint && (
+                 <div style={{ position: 'absolute', left: 0, right: 0, bottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', color: '#94a3b8', fontSize: '0.75rem', pointerEvents: 'none' }}>
+                   <span>Scroll for more</span>
+                   <ChevronDown size={14} />
+                 </div>
+               )}
+               <div
+                 ref={crewsListRef}
+                 onScroll={(e) => updateScrollHint(e.currentTarget, setShowCrewsHint)}
+                 style={{ height: '100%', overflowY: 'auto', paddingRight: '12px', paddingBottom: '28px', scrollbarGutter: 'stable' }}
+               >
                  {groups.length === 0 ? (
                    <p className="text-sm" style={{ textAlign: 'center', color: '#9ca3af' }}>
                      Not currently in any crews.
@@ -555,8 +615,18 @@ export default function Dashboard({ session }) {
               </div>
             )}
 
-            <div style={{ flex: 1, minHeight: 0 }}>
-              <div style={{ height: '100%', overflowY: 'auto', paddingRight: '12px', paddingBottom: '8px', scrollbarGutter: 'stable' }}>
+            <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+              {showEventsHint && (
+                <div style={{ position: 'absolute', left: 0, right: 0, bottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', color: '#94a3b8', fontSize: '0.75rem', pointerEvents: 'none' }}>
+                  <span>Scroll for more</span>
+                  <ChevronDown size={14} />
+                </div>
+              )}
+              <div
+                ref={eventsListRef}
+                onScroll={(e) => updateScrollHint(e.currentTarget, setShowEventsHint)}
+                style={{ height: '100%', overflowY: 'auto', paddingRight: '12px', paddingBottom: '28px', scrollbarGutter: 'stable' }}
+              >
                 {events.length === 0 ? (
                   <p className="text-sm" style={{ textAlign: 'center', color: '#9ca3af' }}>
                     You have no upcoming events yet.
@@ -728,8 +798,18 @@ export default function Dashboard({ session }) {
                 </div>
               )}
 
-              <div style={{ flex: 1, minHeight: 0 }}>
-                <div style={{ height: '100%', overflowY: 'auto', paddingRight: '12px', paddingBottom: '8px', scrollbarGutter: 'stable' }}>
+              <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+                {showWatchlistHint && (
+                  <div style={{ position: 'absolute', left: 0, right: 0, bottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', color: '#94a3b8', fontSize: '0.75rem', pointerEvents: 'none' }}>
+                    <span>Scroll for more</span>
+                    <ChevronDown size={14} />
+                  </div>
+                )}
+                <div
+                  ref={watchlistListRef}
+                  onScroll={(e) => updateScrollHint(e.currentTarget, setShowWatchlistHint)}
+                  style={{ height: '100%', overflowY: 'auto', paddingRight: '12px', paddingBottom: '28px', scrollbarGutter: 'stable' }}
+                >
                   {filteredWatchlist.length === 0 && <p className="text-sm" style={{textAlign:'center'}}>No movies found.</p>}
                   
                   {filteredWatchlist.map(movie => (

@@ -236,6 +236,30 @@ export default function EventView() {
   }
 
   async function handleDeleteEvent() {
+    const { error: votesError } = await supabase
+      .from('votes')
+      .delete()
+      .eq('event_id', code)
+    if (votesError) {
+      alert(`Error: ${votesError.message}`)
+      return
+    }
+    const { error: nominationsError } = await supabase
+      .from('nominations')
+      .delete()
+      .eq('event_id', code)
+    if (nominationsError) {
+      alert(`Error: ${nominationsError.message}`)
+      return
+    }
+    const { error: attendeesError } = await supabase
+      .from('event_attendees')
+      .delete()
+      .eq('event_id', code)
+    if (attendeesError) {
+      alert(`Error: ${attendeesError.message}`)
+      return
+    }
     const { error } = await supabase
       .from('events')
       .delete()
@@ -467,21 +491,23 @@ export default function EventView() {
       <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <h1 style={{ fontSize: '2rem', margin: 0, lineHeight: 1.1 }}>{event.title}</h1>
-          <div className="flex-gap" style={{ marginTop: '10px', color: '#ccc', fontSize: '0.9rem', flexWrap: 'wrap' }}>
-              {event.event_date && (
-                  <span className="flex-gap" style={{background:'rgba(255,255,255,0.1)', padding:'5px 10px', borderRadius:'8px'}}>
-                      <Calendar size={16}/> {new Date(event.event_date).toLocaleString([], {weekday:'short', month:'numeric', day:'numeric', hour:'numeric', minute:'2-digit'})}
-                  </span>
-              )}
-              <button
-                onClick={() => setShowAttendees(prev => !prev)}
-                style={{ background: showAttendees ? 'rgba(0,229,255,0.2)' : 'rgba(255,255,255,0.08)', color: showAttendees ? '#00E5FF' : 'white', padding: '6px 10px', borderRadius: '999px', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0, minWidth: '118px', justifyContent: 'center' }}
-                aria-pressed={showAttendees}
-              >
-                <Users size={16} /> {showAttendees ? 'Hide Guests' : 'Guests'}
-              </button>
+          <div style={{ marginTop: '10px', color: '#ccc', fontSize: '0.9rem', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div className="flex-gap" style={{ flexWrap: 'nowrap', alignItems: 'center', gap: '8px' }}>
+                  {event.event_date && (
+                      <span className="flex-gap" style={{background:'rgba(255,255,255,0.1)', padding:'5px 10px', borderRadius:'8px', whiteSpace: 'nowrap'}}>
+                          <Calendar size={16}/> {new Date(event.event_date).toLocaleString([], {weekday:'short', month:'numeric', day:'numeric', hour:'numeric', minute:'2-digit'})}
+                      </span>
+                  )}
+                  <button
+                    onClick={() => setShowAttendees(prev => !prev)}
+                    style={{ background: showAttendees ? 'rgba(0,229,255,0.2)' : 'rgba(255,255,255,0.08)', color: showAttendees ? '#00E5FF' : 'white', padding: '6px 10px', borderRadius: '999px', display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: 600, whiteSpace: 'nowrap' }}
+                    aria-pressed={showAttendees}
+                  >
+                    <Users size={16} /> {showAttendees ? 'Hide Guests' : 'Guests'}
+                  </button>
+              </div>
               {event.location_address && (
-                  <span className="flex-gap maps-link" onClick={openMaps} style={{background:'rgba(0, 229, 255, 0.1)', color: '#00E5FF', padding:'5px 10px', borderRadius:'8px', cursor: 'pointer', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '6px'}}>
+                  <span className="flex-gap maps-link" onClick={openMaps} style={{background:'rgba(0, 229, 255, 0.1)', color: '#00E5FF', padding:'5px 10px', borderRadius:'8px', cursor: 'pointer', width: 'fit-content', maxWidth: 'min(100%, 360px)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '6px', alignSelf: 'flex-start'}}>
                       <MapPin size={16}/> {event.location_address}
                   </span>
               )}
@@ -519,7 +545,7 @@ export default function EventView() {
               background: 'linear-gradient(180deg, rgba(0,229,255,0.08) 0%, rgba(9,16,35,0.72) 60%, rgba(9,16,35,0.88) 100%)',
               textAlign: 'center',
               boxShadow: '0 20px 50px rgba(0,0,0,0.35)',
-              overflow: 'hidden'
+              overflow: 'visible'
             }}
           >
             <button
@@ -532,18 +558,21 @@ export default function EventView() {
                 position: 'absolute',
                 top: '12px',
                 right: '12px',
-                background: 'rgba(255,255,255,0.08)',
-                color: '#cbd5e1',
+                background: 'rgba(0,229,255,0.28)',
+                color: '#00E5FF',
                 borderRadius: '999px',
-                padding: '6px',
+                width: '36px',
+                height: '36px',
+                padding: 0,
                 display: 'inline-flex',
                 alignItems: 'center',
-                justifyContent: 'center'
+                justifyContent: 'center',
+                boxShadow: '0 6px 16px rgba(0,229,255,0.2)'
               }}
               aria-label="Close event guide"
               title="Dismiss"
             >
-              <X size={16} />
+              <X size={18} />
             </button>
             <div style={{ fontWeight: 800, fontSize: '1.2rem', marginBottom: '6px', color: '#e2e8f0' }}>
               Welcome to Popcorn & Picks!
@@ -724,16 +753,20 @@ export default function EventView() {
 
           <div style={{ height: '1px', background: 'rgba(255,255,255,0.08)', margin: '4px 0' }} />
 
-          <div className="flex-between" style={{ alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <span className="text-sm" style={{ fontWeight: 'bold', letterSpacing: '1px' }}>BALLOT ({myNominations.length + crewNominations.length})</span>
-            {!isWatching && (myNominations.length > 0 || crewNominations.length > 0) && (
-              <div className="flex-gap" style={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <span className="text-sm" style={{ fontWeight: 'bold', letterSpacing: '1px' }}>BALLOT ({myNominations.length + crewNominations.length})</span>
+              {!isWatching && (myNominations.length > 0 || crewNominations.length > 0) && (
                 <button
                   onClick={() => setBallotFilter('all')}
-                  style={{ background: ballotFilter === 'all' ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.08)', color: 'white', padding: '8px 12px', borderRadius: '999px', fontWeight: 600 }}
+                  style={{ background: ballotFilter === 'all' ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.08)', color: 'white', padding: '8px 12px', borderRadius: '999px', fontWeight: 600, whiteSpace: 'nowrap' }}
                 >
                   All
                 </button>
+              )}
+            </div>
+            {!isWatching && (myNominations.length > 0 || crewNominations.length > 0) && (
+              <div className="flex-gap" style={{ flexWrap: 'wrap', justifyContent: 'flex-start' }}>
                 <button
                   onClick={() => setBallotFilter('missing')}
                   style={{ background: ballotFilter === 'missing' ? 'rgba(0,229,255,0.25)' : 'rgba(255,255,255,0.08)', color: ballotFilter === 'missing' ? '#00E5FF' : 'white', padding: '8px 12px', borderRadius: '999px', fontWeight: 600 }}

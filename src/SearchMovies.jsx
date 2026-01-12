@@ -528,7 +528,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
         )}
 
         {/* LIST RENDERING */}
-        <div style={{ flex: 1, overflowY: 'auto' }}>
+        <div style={{ flex: 1, overflowY: 'auto', paddingRight: '12px', scrollbarGutter: 'stable' }}>
             {activeTab === 'search' && !isWritingIn && results.map(m => (
               <MovieRow
                 key={m.id}

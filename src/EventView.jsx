@@ -744,7 +744,7 @@ export default function EventView() {
                   onClick={() => setBallotFilter('favorite')}
                   style={{ background: ballotFilter === 'favorite' ? 'rgba(255,77,154,0.22)' : 'rgba(255,255,255,0.08)', color: ballotFilter === 'favorite' ? '#FF4D9A' : 'white', padding: '8px 12px', borderRadius: '999px', fontWeight: 600 }}
                 >
-                  Superlike{totalFavorites > 0 ? ` (${totalFavorites})` : ''}
+                  Superlikes{totalFavorites > 0 ? ` (${totalFavorites})` : ''}
                 </button>
                 <button
                   onClick={() => setBallotFilter('disliked')}

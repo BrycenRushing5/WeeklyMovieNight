@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { LogOut, Plus, Users, Book, Search, Filter, Calendar, Clock, User, ChevronDown, ChevronUp, X, Minus } from 'lucide-react'
@@ -38,9 +38,6 @@ export default function Dashboard({ session }) {
   const [showEventsGuide, setShowEventsGuide] = useState(true)
   const [showCrewsGuide, setShowCrewsGuide] = useState(true)
   const [showWatchlistGuide, setShowWatchlistGuide] = useState(true)
-  const [showEventsFade, setShowEventsFade] = useState(false)
-  const [showCrewsFade, setShowCrewsFade] = useState(false)
-  const [showWatchlistFade, setShowWatchlistFade] = useState(false)
   const navigate = useNavigate()
   
   // Watchlist Local Search
@@ -50,10 +47,6 @@ export default function Dashboard({ session }) {
   const [showAllGenres, setShowAllGenres] = useState(false)
   const [watchMinScore, setWatchMinScore] = useState(70)
   const [useWatchScore, setUseWatchScore] = useState(false)
-
-  const eventsListRef = useRef(null)
-  const crewsListRef = useRef(null)
-  const watchlistListRef = useRef(null)
 
   const username = session.user.user_metadata.username
 
@@ -314,24 +307,6 @@ export default function Dashboard({ session }) {
   const crewsGuideKey = session?.user?.id ? `crewsGuideDismissed:${session.user.id}` : null
   const watchlistGuideKey = session?.user?.id ? `watchlistGuideDismissed:${session.user.id}` : null
 
-  const updateFade = (el, setFade) => {
-    if (!el) return
-    const hasOverflow = el.scrollHeight - el.clientHeight > 4
-    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 2
-    setFade(hasOverflow && !atBottom)
-  }
-
-  useEffect(() => {
-    updateFade(eventsListRef.current, setShowEventsFade)
-  }, [events.length, activeTab])
-
-  useEffect(() => {
-    updateFade(crewsListRef.current, setShowCrewsFade)
-  }, [groups.length, activeTab])
-
-  useEffect(() => {
-    updateFade(watchlistListRef.current, setShowWatchlistFade)
-  }, [filteredWatchlist.length, activeTab, watchFilter, watchGenres, showAllGenres, watchMinScore, useWatchScore])
 
   return (
     <div style={{ paddingBottom: '40px', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -368,7 +343,7 @@ export default function Dashboard({ session }) {
         </button>
       </div>
 
-      <div style={{ flex: 1, minHeight: 0 }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <AnimatePresence mode="wait">
           {activeTab === 'groups' ? (
             <motion.div key="groups" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} style={{ display: 'flex', flexDirection: 'column', gap: '8px', minHeight: 0, flex: 1 }}>
@@ -472,15 +447,8 @@ export default function Dashboard({ session }) {
                 </div>
              )}
 
-             <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
-               {showCrewsFade && (
-                 <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '20px', background: 'linear-gradient(180deg, rgba(10,15,34,0) 0%, rgba(10,15,34,0.85) 100%)', pointerEvents: 'none' }} />
-               )}
-               <div
-                 ref={crewsListRef}
-                 onScroll={(e) => updateFade(e.currentTarget, setShowCrewsFade)}
-                 style={{ height: '100%', overflowY: 'auto', paddingRight: '12px', paddingBottom: '8px', scrollbarGutter: 'stable' }}
-               >
+             <div style={{ flex: 1, minHeight: 0 }}>
+               <div style={{ height: '100%', overflowY: 'auto', paddingRight: '12px', paddingBottom: '8px', scrollbarGutter: 'stable' }}>
                  {groups.length === 0 ? (
                    <p className="text-sm" style={{ textAlign: 'center', color: '#9ca3af' }}>
                      Not currently in any crews.
@@ -587,15 +555,8 @@ export default function Dashboard({ session }) {
               </div>
             )}
 
-            <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
-              {showEventsFade && (
-                <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '20px', background: 'linear-gradient(180deg, rgba(10,15,34,0) 0%, rgba(10,15,34,0.85) 100%)', pointerEvents: 'none' }} />
-              )}
-              <div
-                ref={eventsListRef}
-                onScroll={(e) => updateFade(e.currentTarget, setShowEventsFade)}
-                style={{ height: '100%', overflowY: 'auto', paddingRight: '12px', paddingBottom: '8px', scrollbarGutter: 'stable' }}
-              >
+            <div style={{ flex: 1, minHeight: 0 }}>
+              <div style={{ height: '100%', overflowY: 'auto', paddingRight: '12px', paddingBottom: '8px', scrollbarGutter: 'stable' }}>
                 {events.length === 0 ? (
                   <p className="text-sm" style={{ textAlign: 'center', color: '#9ca3af' }}>
                     You have no upcoming events yet.
@@ -767,15 +728,8 @@ export default function Dashboard({ session }) {
                 </div>
               )}
 
-              <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
-                {showWatchlistFade && (
-                  <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '20px', background: 'linear-gradient(180deg, rgba(10,15,34,0) 0%, rgba(10,15,34,0.85) 100%)', pointerEvents: 'none' }} />
-                )}
-                <div
-                  ref={watchlistListRef}
-                  onScroll={(e) => updateFade(e.currentTarget, setShowWatchlistFade)}
-                  style={{ height: '100%', overflowY: 'auto', paddingRight: '12px', paddingBottom: '8px', scrollbarGutter: 'stable' }}
-                >
+              <div style={{ flex: 1, minHeight: 0 }}>
+                <div style={{ height: '100%', overflowY: 'auto', paddingRight: '12px', paddingBottom: '8px', scrollbarGutter: 'stable' }}>
                   {filteredWatchlist.length === 0 && <p className="text-sm" style={{textAlign:'center'}}>No movies found.</p>}
                   
                   {filteredWatchlist.map(movie => (

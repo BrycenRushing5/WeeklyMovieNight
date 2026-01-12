@@ -5,6 +5,7 @@ import { X, Heart, ThumbsUp, ThumbsDown, Shuffle, PlayCircle, Minus } from 'luci
 
 export default function ResultsView({ eventId, onClose, onSelected }) {
   const [movies, setMovies] = useState([])
+  const [loading, setLoading] = useState(true)
   const [selectingId, setSelectingId] = useState(null)
   
   // Selection Logic
@@ -16,6 +17,7 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
   const [spinTick, setSpinTick] = useState(0)
   const [showSelectionGuide, setShowSelectionGuide] = useState(true)
   const hasNominations = movies.length > 0
+  const isReady = !loading && hasNominations
   
   useEffect(() => {
     calculateResults()
@@ -34,6 +36,7 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
   }, [method, ignoreDislikes])
 
   async function calculateResults() {
+    setLoading(true)
     const { data: nominations } = await supabase.from('nominations').select('id, movie:movies (*)').eq('event_id', eventId)
     const { data: votes } = await supabase.from('votes').select('movie_id, vote_type, profiles(display_name, username)').eq('event_id', eventId)
     const nominationList = nominations || []
@@ -60,6 +63,7 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
       }
     })
     setMovies(processed)
+    setLoading(false)
   }
 
   async function selectMovie(movieId) {
@@ -199,11 +203,11 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
 
             {method === 'random' && (
                 <motion.button
-                  onClick={() => hasNominations && handleRandomPick()}
-                  disabled={!hasNominations}
+                  onClick={() => isReady && handleRandomPick()}
+                  disabled={!isReady}
                   whileTap={{ scale: 0.98 }}
                   whileHover={{ scale: 1.01 }}
-                  style={{ marginTop: '15px', background: hasNominations ? 'gold' : 'rgba(255,255,255,0.08)', color: hasNominations ? 'black' : '#94a3b8', width: '100%', padding: '15px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', cursor: hasNominations ? 'pointer' : 'not-allowed' }}
+                  style={{ marginTop: '15px', background: isReady ? 'gold' : 'rgba(255,255,255,0.08)', color: isReady ? 'black' : '#94a3b8', width: '100%', padding: '15px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', cursor: isReady ? 'pointer' : 'not-allowed' }}
                 >
                     <motion.span
                       key={spinTick}
@@ -219,16 +223,16 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
             )}
             {method !== 'random' && (
                 <button
-                  onClick={() => hasNominations && setRevealResults(true)}
-                  disabled={!hasNominations}
-                  style={{ marginTop: '15px', background: hasNominations ? '#00E5FF' : 'rgba(255,255,255,0.08)', color: hasNominations ? 'black' : '#94a3b8', width: '100%', padding: '14px', borderRadius: '12px', fontWeight: 700, cursor: hasNominations ? 'pointer' : 'not-allowed' }}
+                  onClick={() => isReady && setRevealResults(true)}
+                  disabled={!isReady}
+                  style={{ marginTop: '15px', background: isReady ? '#00E5FF' : 'rgba(255,255,255,0.08)', color: isReady ? 'black' : '#94a3b8', width: '100%', padding: '14px', borderRadius: '12px', fontWeight: 700, cursor: isReady ? 'pointer' : 'not-allowed' }}
                 >
                     Reveal Results
                 </button>
             )}
         </div>
 
-        {!hasNominations && (
+        {!loading && !hasNominations && (
           <div className="glass-panel" style={{ marginBottom: '20px', textAlign: 'center' }}>
             <div style={{ fontWeight: 700, marginBottom: '6px' }}>No nominations yet</div>
             <div className="text-sm" style={{ color: '#9ca3af' }}>Add nominations to enable selection.</div>
@@ -308,9 +312,9 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
                       </div>
 
                       <div style={{ display: 'flex', gap: '12px' }}>
-                        <Stat icon={Heart} val={movie.stats.hearts} color="#FF0055" />
+                        <Stat icon={Heart} val={movie.stats.hearts} color="#FF4D9A" />
                         <Stat icon={ThumbsUp} val={movie.stats.likes} color="#00E5FF" />
-                        <Stat icon={ThumbsDown} val={movie.stats.dislikes} color="#666" />
+                        <Stat icon={ThumbsDown} val={movie.stats.dislikes} color="#FF4D6D" />
                       </div>
                   </motion.div>
                 )
@@ -428,9 +432,9 @@ function VoteBreakdown({ movie }) {
 
   return (
     <div>
-      {renderGroup('Loved', groups.love, '#FF0055')}
+      {renderGroup('Loved', groups.love, '#FF4D9A')}
       {renderGroup('Liked', groups.up, '#00E5FF')}
-      {renderGroup('Disliked', groups.down, '#888')}
+      {renderGroup('Disliked', groups.down, '#FF4D6D')}
     </div>
   )
 }

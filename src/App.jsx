@@ -7,6 +7,7 @@ import JoinGroup from './JoinGroup'
 import GroupView from './GroupView' 
 import EventView from './EventView'
 import ProfileView from './ProfileView'
+import LoadingSpinner from './LoadingSpinner'
 
 function App() {
   const [session, setSession] = useState(null)
@@ -26,7 +27,7 @@ function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  if (loading) return <div style={{padding: '20px'}}>Loading...</div>
+  if (loading) return <LoadingSpinner label="Loading..." />
 
   // If NOT logged in, we only show Auth. 
   // NOTE: If they clicked an Invite Link, the URL is still in the browser. 

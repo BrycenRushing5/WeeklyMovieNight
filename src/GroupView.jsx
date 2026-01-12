@@ -4,6 +4,7 @@ import { supabase } from './supabaseClient'
 import { Calendar, MapPin, Plus, ArrowRight, Users, Check, Clock, Link as LinkIcon } from 'lucide-react'
 import { ChevronLeft } from 'lucide-react' // Add Icon
 import { useNavigate } from 'react-router-dom' // Add Hook
+import LoadingSpinner from './LoadingSpinner'
 
 export default function GroupView({ session }) {
     const navigate = useNavigate()
@@ -86,7 +87,7 @@ export default function GroupView({ session }) {
       setNewEventLocation('')
       setShowCreate(false)
       if (createdEvent?.id) {
-        navigate(`/room/${createdEvent.id}`)
+        navigate(`/room/${createdEvent.id}`, { state: { from: 'group', groupId } })
       } else {
         getEvents()
       }
@@ -168,11 +169,11 @@ export default function GroupView({ session }) {
     navigate('/')
   }
 
-  if (!group) return <div style={{padding: '20px'}}>Loading Group...</div>
+  if (!group) return <LoadingSpinner label="Loading crew..." />
 
   return (
     <>
-    <div style={{ padding: '16px', paddingBottom: '80px', height: '100%', overflowY: 'auto' }}>
+    <div style={{ padding: '16px', paddingRight: '28px', paddingBottom: '80px', height: '100%', overflowY: 'auto', scrollbarGutter: 'stable' }}>
       {/* BACK BUTTON */}
       <button onClick={() => navigate('/')} style={{ background: 'none', color: '#888', padding: 0, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '5px' }}>
         <ChevronLeft size={20} /> Back to Dashboard
@@ -313,7 +314,7 @@ export default function GroupView({ session }) {
       {events.length === 0 ? <p className="text-sm">No events planned yet.</p> : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
             {events.map(event => (
-                <Link key={event.id} to={`/room/${event.id}`} style={{ textDecoration: 'none' }}>
+                <Link key={event.id} to={`/room/${event.id}`} state={{ from: 'group', groupId }} style={{ textDecoration: 'none' }}>
                     <div className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
                             <h3 style={{ margin: '0 0 5px 0', fontSize: '1.2rem' }}>{event.title}</h3>

@@ -1,16 +1,19 @@
 import { useEffect, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ThumbsUp, ThumbsDown, Heart, Plus, Film, MapPin, Calendar, Clock, Ticket, ChevronLeft, Link as LinkIcon, Check, Users, Star, RotateCcw, ChevronDown, ChevronUp, X, Minus } from 'lucide-react'
+import { ThumbsUp, ThumbsDown, Heart, Plus, Film, MapPin, Calendar, Clock, Ticket, ChevronLeft, Link as LinkIcon, Check, Users, Star, RotateCcw, ChevronDown, ChevronUp, X, Minus, PlayCircle, Search } from 'lucide-react'
 import SearchMovies from './SearchMovies'
 import ResultsView from './ResultsView'
 import MovieCard from './MovieCard'
 import RateMovie from './RateMovie'
+import LoadingSpinner from './LoadingSpinner'
 
 export default function EventView() {
   const { code } = useParams() // Event ID
   const navigate = useNavigate()
+  const location = useLocation()
+  const navState = location.state || {}
   
   const [event, setEvent] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -25,6 +28,8 @@ export default function EventView() {
   const [editDate, setEditDate] = useState('')
   const [savingEvent, setSavingEvent] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [showRemoveNominationConfirm, setShowRemoveNominationConfirm] = useState(false)
+  const [pendingRemoval, setPendingRemoval] = useState(null)
   
   // Split Ballot States
   const [myNominations, setMyNominations] = useState([])
@@ -36,8 +41,9 @@ export default function EventView() {
   const [ballotFilter, setBallotFilter] = useState('all')
   const [showSearch, setShowSearch] = useState(false)
   const [showResultsView, setShowResultsView] = useState(false)
+  const [showNoNominationsNotice, setShowNoNominationsNotice] = useState(false)
   const [showInvite, setShowInvite] = useState(false)
-  const [inviteAddToGroup, setInviteAddToGroup] = useState(true)
+  const [inviteAddToGroup, setInviteAddToGroup] = useState(false)
   const [inviteCopied, setInviteCopied] = useState(false)
   const [groupShareCode, setGroupShareCode] = useState('')
   const [showAttendees, setShowAttendees] = useState(false)
@@ -126,6 +132,7 @@ export default function EventView() {
             .from('event_attendees')
             .upsert([{ event_id: code, user_id: user.id }], { onConflict: 'event_id, user_id' })
       }
+      await fetchAttendees()
     } catch (err) {
       console.error(err)
       setError("Could not load event. It might have been deleted.")
@@ -238,7 +245,7 @@ export default function EventView() {
       return
     }
     setShowDeleteConfirm(false)
-    navigate(event?.group_id ? `/group/${event.group_id}` : `/`)
+    navigate(backTarget)
   }
 
   async function handleLeaveEvent() {
@@ -284,7 +291,7 @@ export default function EventView() {
 
     setLeavingEvent(false)
     setShowLeaveConfirm(false)
-    navigate(event?.group_id ? `/group/${event.group_id}` : `/`)
+    navigate(backTarget)
   }
 
   async function handleAddCrew() {
@@ -303,12 +310,30 @@ export default function EventView() {
   }
 
   const handleVote = async (movieId, voteValue) => {
-    setMyVotes((prev) => ({ ...prev, [movieId]: voteValue }))
+    const isRemoving = myVotes[movieId] === voteValue
+    setMyVotes((prev) => {
+      const next = { ...prev }
+      if (isRemoving) {
+        delete next[movieId]
+      } else {
+        next[movieId] = voteValue
+      }
+      return next
+    })
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
+      if (isRemoving) {
+        await supabase
+          .from('votes')
+          .delete()
+          .eq('event_id', code)
+          .eq('movie_id', movieId)
+          .eq('user_id', user.id)
+      } else {
         await supabase.from('votes').upsert([
-            { event_id: code, movie_id: movieId, user_id: user.id, vote_type: voteValue }
+          { event_id: code, movie_id: movieId, user_id: user.id, vote_type: voteValue }
         ], { onConflict: 'event_id, movie_id, user_id' })
+      }
     }
   }
 
@@ -327,8 +352,7 @@ export default function EventView() {
   }
 
   const handleRemoveNomination = async (nomination) => {
-    const confirmed = window.confirm('Remove this nomination for everyone? This also clears all votes on it.')
-    if (!confirmed) return
+    if (!nomination) return
     const { error: nominationError } = await supabase
       .from('nominations')
       .delete()
@@ -343,6 +367,18 @@ export default function EventView() {
       .eq('event_id', code)
       .eq('movie_id', nomination.movie.id)
     refreshNominations()
+  }
+
+  const requestRemoveNomination = (nomination) => {
+    setPendingRemoval(nomination)
+    setShowRemoveNominationConfirm(true)
+  }
+
+  const confirmRemoveNomination = async () => {
+    if (!pendingRemoval) return
+    await handleRemoveNomination(pendingRemoval)
+    setPendingRemoval(null)
+    setShowRemoveNominationConfirm(false)
   }
 
   const openMaps = () => {
@@ -406,17 +442,25 @@ export default function EventView() {
       : ballotFilter === 'favorite'
         ? favoriteCrewNominations
         : crewNominations
+  const backTarget = navState.from === 'hub'
+    ? '/'
+    : navState.from === 'group'
+      ? (navState.groupId ? `/group/${navState.groupId}` : (event?.group_id ? `/group/${event.group_id}` : '/'))
+      : (event?.group_id ? `/group/${event.group_id}` : '/')
+  const backLabel = navState.from === 'hub'
+    ? 'My Hub'
+    : (navState.from === 'group' || event?.group_id ? 'Crew' : 'Hub')
 
-  if (loading) return <div style={{padding:'40px', textAlign:'center'}}>Loading Event...</div>
+  if (loading) return <LoadingSpinner label="Loading event..." />
   if (error) return <div style={{padding:'40px', textAlign:'center', color: '#ff4d4d'}}>{error}</div>
   if (!event) return null
 
   return (
-    <div style={{ paddingBottom: '40px', paddingRight: '16px', paddingTop: '12px', height: '100%', overflowY: 'auto' }}>
+    <div style={{ paddingBottom: '40px', paddingRight: '28px', paddingTop: '12px', height: '100%', overflowY: 'auto', scrollbarGutter: 'stable' }}>
       
       {/* BACK NAVIGATION */}
-      <button onClick={() => navigate(event.group_id ? `/group/${event.group_id}` : `/`)} style={{ background: 'none', color: '#888', padding: 0, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-        <ChevronLeft size={20} /> Back to {event.group_id ? 'Crew' : 'Hub'}
+      <button onClick={() => navigate(backTarget)} style={{ background: 'none', color: '#888', padding: 0, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+        <ChevronLeft size={20} /> Back to {backLabel}
       </button>
 
       {/* HEADER */}
@@ -463,53 +507,120 @@ export default function EventView() {
         </div>
       </div>
       {showEventGuide && (
-        <div style={{ position: 'relative', marginBottom: '14px', paddingTop: '8px', paddingRight: '12px' }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 2600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '18px', background: 'rgba(8,11,24,0.75)', backdropFilter: 'blur(6px)' }}>
           <div
             style={{
-              padding: '14px',
-              borderRadius: '14px',
-              border: '1px dashed rgba(0,229,255,0.35)',
-              background: 'rgba(0,229,255,0.06)',
-              textAlign: 'center'
+              position: 'relative',
+              width: '100%',
+              maxWidth: '540px',
+              padding: '18px',
+              borderRadius: '18px',
+              border: '1px solid rgba(0,229,255,0.22)',
+              background: 'linear-gradient(180deg, rgba(0,229,255,0.08) 0%, rgba(9,16,35,0.72) 60%, rgba(9,16,35,0.88) 100%)',
+              textAlign: 'center',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.35)',
+              overflow: 'hidden'
             }}
           >
-            <div style={{ fontWeight: 700, marginBottom: '6px', color: '#e2e8f0' }}>
-              This is a movie night event!
+            <button
+              type="button"
+              onClick={() => {
+                localStorage.setItem('eventGuideDismissed', 'true')
+                setShowEventGuide(false)
+              }}
+              style={{
+                position: 'absolute',
+                top: '12px',
+                right: '12px',
+                background: 'rgba(255,255,255,0.08)',
+                color: '#cbd5e1',
+                borderRadius: '999px',
+                padding: '6px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+              aria-label="Close event guide"
+              title="Dismiss"
+            >
+              <X size={16} />
+            </button>
+            <div style={{ fontWeight: 800, fontSize: '1.2rem', marginBottom: '6px', color: '#e2e8f0' }}>
+              Welcome to Popcorn & Picks!
             </div>
-            <div className="text-sm" style={{ color: '#cbd5e1' }}>
-              <div>Using events is easy. It is just three steps:</div>
-              <div style={{ marginTop: '6px' }}>1. Invite your friends.</div>
-              <div>2. Nominate some movies.</div>
-              <div>3. Select a movie based on peoples votes</div>
-              <div style={{ marginTop: '6px' }}>
-                Rate a movie after watching it to see it added to your profile
+            <div className="text-sm" style={{ color: '#cbd5e1', maxWidth: '420px', margin: '0 auto' }}>
+              Let’s pick the best movie for everyone. Here’s how it works:
+            </div>
+
+            <div style={{ marginTop: '18px', display: 'grid', gap: '14px', textAlign: 'left' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '52px 1fr', gap: '12px', alignItems: 'start' }}>
+                <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'rgba(0,229,255,0.14)', border: '1px solid rgba(0,229,255,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Users size={20} color="#00E5FF" />
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, color: '#e2e8f0' }}>1. Invite Friends</div>
+                  <div className="text-sm" style={{ color: '#94a3b8' }}>
+                    Share the link so friends can join the event.
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '52px 1fr', gap: '12px', alignItems: 'start' }}>
+                <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'rgba(0,229,255,0.14)', border: '1px solid rgba(0,229,255,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Search size={20} color="#00E5FF" />
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, color: '#e2e8f0' }}>2. Nominate Movies</div>
+                  <div className="text-sm" style={{ color: '#94a3b8' }}>
+                    Search and add options to the voting ballot.
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '52px 1fr', gap: '12px', alignItems: 'start' }}>
+                <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'rgba(0,229,255,0.14)', border: '1px solid rgba(0,229,255,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <ThumbsUp size={20} color="#00E5FF" />
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, color: '#e2e8f0' }}>3. Vote</div>
+                  <div className="text-sm" style={{ color: '#94a3b8' }}>
+                    Use <span style={{ color: '#FF4D9A', fontWeight: 700 }}>Superlike</span> for movies you really want to watch.
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '52px 1fr', gap: '12px', alignItems: 'start' }}>
+                <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'rgba(255,215,0,0.14)', border: '1px solid rgba(255,215,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <PlayCircle size={20} color="#ffd700" />
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, color: '#e2e8f0' }}>4. Select & Watch</div>
+                  <div className="text-sm" style={{ color: '#94a3b8' }}>
+                    Your votes help determine what movie gets selected!
+                  </div>
+                </div>
               </div>
             </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                localStorage.setItem('eventGuideDismissed', 'true')
+                setShowEventGuide(false)
+              }}
+              style={{
+                marginTop: '18px',
+                width: '100%',
+                background: '#00E5FF',
+                color: 'black',
+                padding: '12px 16px',
+                borderRadius: '999px',
+                fontWeight: 700
+              }}
+            >
+              Let’s Start
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              localStorage.setItem('eventGuideDismissed', 'true')
-              setShowEventGuide(false)
-            }}
-            style={{
-              position: 'absolute',
-              top: 0,
-              right: 0,
-              background: 'rgba(0,229,255,0.28)',
-              color: '#00E5FF',
-              borderRadius: '999px',
-              padding: '6px',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 6px 16px rgba(0,229,255,0.2)'
-            }}
-            aria-label="Minimize event guide"
-            title="Dismiss"
-          >
-            <Minus size={14} />
-          </button>
         </div>
       )}
 
@@ -546,9 +657,7 @@ export default function EventView() {
       {showAttendees && (
         <div className="glass-panel" style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <div style={{ fontWeight: 700 }}>Event Guests</div>
-          {attendeesLoading ? (
-            <p className="text-sm">Loading...</p>
-          ) : eventAttendees.length === 0 ? (
+          {eventAttendees.length === 0 ? (
             <p className="text-sm">No attendees yet.</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -593,8 +702,8 @@ export default function EventView() {
                 <Plus size={18} /> Nominate
               </button>
               <button
-                onClick={() => hasNominations && setShowResultsView(true)}
-                disabled={!hasNominations}
+                onClick={() => (hasNominations ? setShowResultsView(true) : setShowNoNominationsNotice(true))}
+                aria-disabled={!hasNominations}
                 style={{
                   background: hasNominations ? '#ffd700' : 'rgba(255,255,255,0.08)',
                   color: hasNominations ? 'black' : '#94a3b8',
@@ -633,13 +742,13 @@ export default function EventView() {
                 </button>
                 <button
                   onClick={() => setBallotFilter('favorite')}
-                  style={{ background: ballotFilter === 'favorite' ? 'rgba(255,0,85,0.22)' : 'rgba(255,255,255,0.08)', color: ballotFilter === 'favorite' ? '#ff4d6d' : 'white', padding: '8px 12px', borderRadius: '999px', fontWeight: 600 }}
+                  style={{ background: ballotFilter === 'favorite' ? 'rgba(255,77,154,0.22)' : 'rgba(255,255,255,0.08)', color: ballotFilter === 'favorite' ? '#FF4D9A' : 'white', padding: '8px 12px', borderRadius: '999px', fontWeight: 600 }}
                 >
-                  Favorites{totalFavorites > 0 ? ` (${totalFavorites})` : ''}
+                  Superlike{totalFavorites > 0 ? ` (${totalFavorites})` : ''}
                 </button>
                 <button
                   onClick={() => setBallotFilter('disliked')}
-                  style={{ background: ballotFilter === 'disliked' ? 'rgba(255,0,85,0.22)' : 'rgba(255,255,255,0.08)', color: ballotFilter === 'disliked' ? '#ff4d6d' : 'white', padding: '8px 12px', borderRadius: '999px', fontWeight: 600 }}
+                  style={{ background: ballotFilter === 'disliked' ? 'rgba(255,77,109,0.22)' : 'rgba(255,255,255,0.08)', color: ballotFilter === 'disliked' ? '#FF4D6D' : 'white', padding: '8px 12px', borderRadius: '999px', fontWeight: 600 }}
                 >
                   Dislikes{totalDisliked > 0 ? ` (${totalDisliked})` : ''}
                 </button>
@@ -742,7 +851,7 @@ export default function EventView() {
                   myVotes={myVotes}
                   handleVote={handleVote}
                   canRemove
-                  onRemove={handleRemoveNomination}
+                  onRemove={requestRemoveNomination}
                 />
               ))}
           </div>
@@ -786,6 +895,36 @@ export default function EventView() {
       )}
       <AnimatePresence>
         {showSearch && <SearchMovies eventId={code} groupId={event.group_id} onClose={() => setShowSearch(false)} onNominate={handleAddNomination} />}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showNoNominationsNotice && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{ position: 'fixed', inset: 0, zIndex: 2150, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(5px)' }}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.96, opacity: 0 }}
+              transition={{ type: 'spring', damping: 20, stiffness: 300 }}
+              style={{ width: '90%', maxWidth: '420px', background: '#1a1a2e', borderRadius: '20px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px', textAlign: 'center' }}
+            >
+              <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>No nominations yet</div>
+              <p className="text-sm" style={{ color: '#bbb', margin: 0 }}>
+                You can’t select a movie until one has been nominated.
+              </p>
+              <button
+                onClick={() => setShowNoNominationsNotice(false)}
+                style={{ background: 'var(--primary)', color: 'white', padding: '10px', borderRadius: '12px', fontWeight: 700 }}
+              >
+                Got it
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
       </AnimatePresence>
 
       <AnimatePresence>
@@ -869,6 +1008,44 @@ export default function EventView() {
                 </button>
                 <button onClick={handleDeleteEvent} style={{ flex: 1, background: '#ff4d6d', color: 'white', padding: '10px', borderRadius: '12px', fontWeight: 700 }}>
                   Delete
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showRemoveNominationConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{ position: 'fixed', inset: 0, zIndex: 2200, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(5px)' }}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.96, opacity: 0 }}
+              transition={{ type: 'spring', damping: 20, stiffness: 300 }}
+              style={{ width: '90%', maxWidth: '420px', background: '#1a1a2e', borderRadius: '20px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}
+            >
+              <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>Remove this nomination?</div>
+              <p className="text-sm" style={{ color: '#bbb', margin: 0 }}>
+                This removes the nomination for everyone and clears all votes on it.
+              </p>
+              <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+                <button
+                  onClick={() => {
+                    setShowRemoveNominationConfirm(false)
+                    setPendingRemoval(null)
+                  }}
+                  style={{ flex: 1, background: 'rgba(255,255,255,0.08)', color: 'white', padding: '10px', borderRadius: '12px', fontWeight: 700 }}
+                >
+                  Cancel
+                </button>
+                <button onClick={confirmRemoveNomination} style={{ flex: 1, background: '#ff4d6d', color: 'white', padding: '10px', borderRadius: '12px', fontWeight: 700 }}>
+                  Remove
                 </button>
               </div>
             </motion.div>
@@ -1208,12 +1385,30 @@ function NominationCard({ item, myVotes, handleVote, canRemove = false, onRemove
 }
 
 function VoteBtn({ active, type, onClick }) {
-    const colors = { down: 'var(--primary)', up: '#00E5FF', love: '#FF0055' }
+    const colors = { down: '#FF4D6D', up: '#00E5FF', love: '#FF4D9A' }
+    const backgrounds = {
+      down: 'rgba(255,77,109,0.18)',
+      up: 'rgba(0,229,255,0.18)',
+      love: 'rgba(255,77,154,0.18)'
+    }
     const icons = { down: ThumbsDown, up: ThumbsUp, love: Heart }
     const Icon = icons[type]
     return (
-        <button onClick={onClick} style={{ flex: 1, padding: '12px', borderRadius: '12px', background: active ? colors[type] : 'rgba(255,255,255,0.05)', color: active && type === 'up' ? 'black' : 'white', opacity: active ? 1 : 0.4, display: 'flex', justifyContent: 'center' }}>
-            <Icon size={20} fill={active && type === 'love' ? 'white' : 'none'} />
+        <button
+          onClick={onClick}
+          style={{
+            flex: 1,
+            padding: '12px',
+            borderRadius: '12px',
+            background: active ? backgrounds[type] : 'rgba(255,255,255,0.05)',
+            border: active ? `1px solid ${colors[type]}` : '1px solid rgba(255,255,255,0.08)',
+            color: active ? colors[type] : 'white',
+            opacity: active ? 1 : 0.4,
+            display: 'flex',
+            justifyContent: 'center'
+          }}
+        >
+            <Icon size={20} color={active ? colors[type] : 'white'} fill={active && type === 'love' ? colors[type] : 'none'} />
         </button>
     )
 }

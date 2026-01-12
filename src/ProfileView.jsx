@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 import { User, Trophy, Target, Film, Sparkles, ChevronLeft, Star, ThumbsUp } from 'lucide-react'
 import MovieCard from './MovieCard'
+import LoadingSpinner from './LoadingSpinner'
 
 export default function ProfileView({ session }) {
   const [loading, setLoading] = useState(true)
@@ -92,6 +93,18 @@ export default function ProfileView({ session }) {
     setSavingDisplayName(true)
     setDisplayNameError('')
 
+    const { data: sessionData } = await supabase.auth.getSession()
+    let activeSession = sessionData?.session || null
+    if (!activeSession) {
+      const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession()
+      if (refreshError || !refreshed?.session) {
+        setDisplayNameError('Your session expired. Please sign in again.')
+        setSavingDisplayName(false)
+        return
+      }
+      activeSession = refreshed.session
+    }
+
     const { error: authError } = await supabase.auth.updateUser({
       data: { display_name: rawDisplayName }
     })
@@ -124,10 +137,10 @@ export default function ProfileView({ session }) {
     setIsEditingDisplayName(false)
   }
 
-  if (loading) return <div style={{ padding: '40px', textAlign: 'center' }}>Loading profile...</div>
+  if (loading) return <LoadingSpinner label="Loading profile..." />
 
   return (
-    <div style={{ paddingBottom: '40px', height: '100%', overflowY: 'auto' }}>
+    <div style={{ paddingBottom: '40px', height: '100%', overflowY: 'auto', paddingRight: '12px' }}>
       <Link to="/" style={{ textDecoration: 'none' }}>
         <button style={{ background: 'none', color: '#888', padding: 0, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '5px' }}>
           <ChevronLeft size={20} /> Back to Hub
@@ -135,7 +148,7 @@ export default function ProfileView({ session }) {
       </Link>
 
       <div className="glass-panel" style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '16px' }}>
-        <div style={{ width: '54px', height: '54px', borderRadius: '50%', background: 'rgba(0,229,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ width: '54px', height: '54px', minWidth: '54px', minHeight: '54px', flexShrink: 0, borderRadius: '50%', background: 'rgba(0,229,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <User size={26} color="#00E5FF" />
         </div>
         <div>

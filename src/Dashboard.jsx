@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { LogOut, Plus, Users, Book, Search, Filter, Calendar, Clock, User, ChevronDown, ChevronUp, X, Minus } from 'lucide-react'
@@ -38,6 +38,9 @@ export default function Dashboard({ session }) {
   const [showEventsGuide, setShowEventsGuide] = useState(true)
   const [showCrewsGuide, setShowCrewsGuide] = useState(true)
   const [showWatchlistGuide, setShowWatchlistGuide] = useState(true)
+  const [showEventsFade, setShowEventsFade] = useState(false)
+  const [showCrewsFade, setShowCrewsFade] = useState(false)
+  const [showWatchlistFade, setShowWatchlistFade] = useState(false)
   const navigate = useNavigate()
   
   // Watchlist Local Search
@@ -47,6 +50,10 @@ export default function Dashboard({ session }) {
   const [showAllGenres, setShowAllGenres] = useState(false)
   const [watchMinScore, setWatchMinScore] = useState(70)
   const [useWatchScore, setUseWatchScore] = useState(false)
+
+  const eventsListRef = useRef(null)
+  const crewsListRef = useRef(null)
+  const watchlistListRef = useRef(null)
 
   const username = session.user.user_metadata.username
 
@@ -224,7 +231,7 @@ export default function Dashboard({ session }) {
       setShowCreateEvent(false)
       if (createdEvent?.id) {
         setEvents(prev => (prev.find(e => e.id === createdEvent.id) ? prev : [createdEvent, ...prev]))
-        navigate(`/room/${createdEvent.id}`)
+        navigate(`/room/${createdEvent.id}`, { state: { from: 'hub' } })
       }
       getMyGroups()
     }
@@ -307,8 +314,27 @@ export default function Dashboard({ session }) {
   const crewsGuideKey = session?.user?.id ? `crewsGuideDismissed:${session.user.id}` : null
   const watchlistGuideKey = session?.user?.id ? `watchlistGuideDismissed:${session.user.id}` : null
 
+  const updateFade = (el, setFade) => {
+    if (!el) return
+    const hasOverflow = el.scrollHeight - el.clientHeight > 4
+    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 2
+    setFade(hasOverflow && !atBottom)
+  }
+
+  useEffect(() => {
+    updateFade(eventsListRef.current, setShowEventsFade)
+  }, [events.length, activeTab])
+
+  useEffect(() => {
+    updateFade(crewsListRef.current, setShowCrewsFade)
+  }, [groups.length, activeTab])
+
+  useEffect(() => {
+    updateFade(watchlistListRef.current, setShowWatchlistFade)
+  }, [filteredWatchlist.length, activeTab, watchFilter, watchGenres, showAllGenres, watchMinScore, useWatchScore])
+
   return (
-    <div style={{ paddingBottom: '40px', height: '100%', overflowY: 'auto' }}>
+    <div style={{ paddingBottom: '40px', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* HEADER */}
       <div className="flex-between" style={{ marginBottom: '30px' }}>
         <div>
@@ -342,9 +368,10 @@ export default function Dashboard({ session }) {
         </button>
       </div>
 
-      <AnimatePresence mode="wait">
-        {activeTab === 'groups' ? (
-          <motion.div key="groups" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <AnimatePresence mode="wait">
+          {activeTab === 'groups' ? (
+            <motion.div key="groups" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} style={{ display: 'flex', flexDirection: 'column', gap: '8px', minHeight: 0, flex: 1 }}>
              {showCrewsGuide && (
                <div style={{ position: 'relative', marginBottom: '14px', paddingTop: '8px', paddingRight: '12px' }}>
                  <div
@@ -445,30 +472,41 @@ export default function Dashboard({ session }) {
                 </div>
              )}
 
-             {groups.length === 0 ? (
-               <p className="text-sm" style={{ textAlign: 'center', color: '#9ca3af' }}>
-                 Not currently in any crews.
-               </p>
-             ) : (
-               groups.map(g => (
-                 <Link key={g.id} to={`/group/${g.id}`} style={{ textDecoration: 'none' }}>
-                   <div className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px', marginBottom: '12px' }}>
-                      <div>
-                        <div style={{ fontWeight: '600', fontSize: '1.1rem', color: 'white' }}>{g.name}</div>
-                        <div className="text-sm">
-                          {groupMemberPreview[g.id]?.length
-                            ? `${groupMemberPreview[g.id].join(', ')}${groupMemberPreview[g.id].length === 3 ? '...' : ''}`
-                            : 'No members yet'}
-                        </div>
-                      </div>
-                      <span style={{ color: 'var(--text-muted)' }}>→</span>
-                   </div>
-                 </Link>
-               ))
-             )}
-          </motion.div>
-        ) : activeTab === 'events' ? (
-          <motion.div key="events" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
+             <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
+               {showCrewsFade && (
+                 <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '20px', background: 'linear-gradient(180deg, rgba(10,15,34,0) 0%, rgba(10,15,34,0.85) 100%)', pointerEvents: 'none' }} />
+               )}
+               <div
+                 ref={crewsListRef}
+                 onScroll={(e) => updateFade(e.currentTarget, setShowCrewsFade)}
+                 style={{ height: '100%', overflowY: 'auto', paddingRight: '12px', paddingBottom: '8px', scrollbarGutter: 'stable' }}
+               >
+                 {groups.length === 0 ? (
+                   <p className="text-sm" style={{ textAlign: 'center', color: '#9ca3af' }}>
+                     Not currently in any crews.
+                   </p>
+                 ) : (
+                   groups.map(g => (
+                     <Link key={g.id} to={`/group/${g.id}`} style={{ textDecoration: 'none' }}>
+                       <div className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px', marginBottom: '12px' }}>
+                          <div>
+                            <div style={{ fontWeight: '600', fontSize: '1.1rem', color: 'white' }}>{g.name}</div>
+                            <div className="text-sm">
+                              {groupMemberPreview[g.id]?.length
+                                ? `${groupMemberPreview[g.id].join(', ')}${groupMemberPreview[g.id].length === 3 ? '...' : ''}`
+                                : 'No members yet'}
+                            </div>
+                          </div>
+                          <span style={{ color: 'var(--text-muted)' }}>→</span>
+                       </div>
+                     </Link>
+                   ))
+                 )}
+               </div>
+             </div>
+            </motion.div>
+          ) : activeTab === 'events' ? (
+            <motion.div key="events" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} style={{ display: 'flex', flexDirection: 'column', gap: '8px', minHeight: 0, flex: 1 }}>
             {showEventsGuide && (
               <div style={{ position: 'relative', marginBottom: '14px', paddingTop: '8px', paddingRight: '12px' }}>
                 <div
@@ -549,35 +587,46 @@ export default function Dashboard({ session }) {
               </div>
             )}
 
-            {events.length === 0 ? (
-              <p className="text-sm" style={{ textAlign: 'center', color: '#9ca3af' }}>
-                You have no upcoming events yet.
-              </p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {events.map(event => (
-                  <Link key={event.id} to={`/room/${event.id}`} style={{ textDecoration: 'none' }}>
-                    <div className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px' }}>
-                      <div>
-                        <div style={{ fontWeight: 700, color: 'white' }}>{event.title}</div>
-                        <div className="text-sm" style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
-                          {groupNameById[event.group_id] || 'No Crew'} • {event.event_date ? new Date(event.event_date).toLocaleDateString() : 'TBD'}
-                          {event.created_by === session.user.id && (
-                            <span style={{ background: 'rgba(0,229,255,0.15)', color: '#00E5FF', padding: '2px 8px', borderRadius: '10px', fontSize: '0.75rem' }}>
-                              Creator
-                            </span>
-                          )}
+            <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
+              {showEventsFade && (
+                <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '20px', background: 'linear-gradient(180deg, rgba(10,15,34,0) 0%, rgba(10,15,34,0.85) 100%)', pointerEvents: 'none' }} />
+              )}
+              <div
+                ref={eventsListRef}
+                onScroll={(e) => updateFade(e.currentTarget, setShowEventsFade)}
+                style={{ height: '100%', overflowY: 'auto', paddingRight: '12px', paddingBottom: '8px', scrollbarGutter: 'stable' }}
+              >
+                {events.length === 0 ? (
+                  <p className="text-sm" style={{ textAlign: 'center', color: '#9ca3af' }}>
+                    You have no upcoming events yet.
+                  </p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {events.map(event => (
+                      <Link key={event.id} to={`/room/${event.id}`} state={{ from: 'hub' }} style={{ textDecoration: 'none' }}>
+                        <div className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px' }}>
+                          <div>
+                            <div style={{ fontWeight: 700, color: 'white' }}>{event.title}</div>
+                            <div className="text-sm" style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                              {groupNameById[event.group_id] || 'No Crew'} • {event.event_date ? new Date(event.event_date).toLocaleDateString() : 'TBD'}
+                              {event.created_by === session.user.id && (
+                                <span style={{ background: 'rgba(0,229,255,0.15)', color: '#00E5FF', padding: '2px 8px', borderRadius: '10px', fontSize: '0.75rem' }}>
+                                  Creator
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <span style={{ color: 'var(--text-muted)' }}>→</span>
                         </div>
-                      </div>
-                      <span style={{ color: 'var(--text-muted)' }}>→</span>
-                    </div>
-                  </Link>
-                ))}
+                      </Link>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
+            </div>
           </motion.div>
         ) : (
-          <motion.div key="watchlist" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+          <motion.div key="watchlist" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} style={{ display: 'flex', flexDirection: 'column', gap: '8px', minHeight: 0, flex: 1 }}>
               {showWatchlistGuide && (
                 <div style={{ position: 'relative', marginBottom: '14px', paddingTop: '8px', paddingRight: '12px' }}>
                   <div
@@ -626,7 +675,7 @@ export default function Dashboard({ session }) {
               <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
                   <div style={{ position: 'relative', flex: 1 }}>
                       <Search size={16} style={{ position: 'absolute', left: 12, top: 14, color: '#888' }} />
-                      <input placeholder="Filter your list..." value={watchFilter} onChange={(e) => setWatchFilter(e.target.value)} style={{ paddingLeft: '35px' }} />
+                      <input placeholder="Search your Watchlist..." alue={watchFilter} onChange={(e) => setWatchFilter(e.target.value)} style={{ paddingLeft: '35px' }} />
                   </div>
                   <button onClick={() => setShowWatchFilters(!showWatchFilters)} style={{ width: 'auto', background: 'rgba(255,255,255,0.08)', color: 'white', padding: '0 12px', borderRadius: '10px', height: '44px' }}>
                     <Filter size={16} color={showWatchFilters ? '#00E5FF' : 'white'} />
@@ -718,32 +767,44 @@ export default function Dashboard({ session }) {
                 </div>
               )}
 
-              {filteredWatchlist.length === 0 && <p className="text-sm" style={{textAlign:'center'}}>No movies found.</p>}
-              
-              {filteredWatchlist.map(movie => (
-                  <MovieCard key={movie.id} movie={movie}>
-                    <div style={{ display: 'flex', gap: '10px' }}>
-                      <button
-                        onClick={() => { setNominateMovie(movie); setShowNominate(true) }}
-                        style={{ flex: 1, background: 'rgba(255,255,255,0.1)', color: 'white', padding: '10px', borderRadius: '12px' }}
-                      >
-                        Nominate
-                      </button>
-                      <button
-                        onClick={() => removeFromWatchlist(movie)}
-                        style={{ background: 'rgba(255,255,255,0.06)', color: '#ff7a7a', padding: '10px 12px', borderRadius: '12px' }}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </MovieCard>
-              ))}
+              <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
+                {showWatchlistFade && (
+                  <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '20px', background: 'linear-gradient(180deg, rgba(10,15,34,0) 0%, rgba(10,15,34,0.85) 100%)', pointerEvents: 'none' }} />
+                )}
+                <div
+                  ref={watchlistListRef}
+                  onScroll={(e) => updateFade(e.currentTarget, setShowWatchlistFade)}
+                  style={{ height: '100%', overflowY: 'auto', paddingRight: '12px', paddingBottom: '8px', scrollbarGutter: 'stable' }}
+                >
+                  {filteredWatchlist.length === 0 && <p className="text-sm" style={{textAlign:'center'}}>No movies found.</p>}
+                  
+                  {filteredWatchlist.map(movie => (
+                      <MovieCard key={movie.id} movie={movie}>
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                          <button
+                            onClick={() => { setNominateMovie(movie); setShowNominate(true) }}
+                            style={{ flex: 1, background: 'rgba(255,255,255,0.1)', color: 'white', padding: '10px', borderRadius: '12px' }}
+                          >
+                            Nominate
+                          </button>
+                          <button
+                            onClick={() => removeFromWatchlist(movie)}
+                            style={{ background: 'rgba(255,255,255,0.06)', color: '#ff7a7a', padding: '10px 12px', borderRadius: '12px' }}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </MovieCard>
+                  ))}
+                </div>
+              </div>
           </motion.div>
         )}
-      </AnimatePresence>
+        </AnimatePresence>
+      </div>
 
       <AnimatePresence>
-        {showSearch && <SearchMovies eventId={null} onClose={() => setShowSearch(false)} customAction={addToWatchlist} />}
+        {showSearch && <SearchMovies eventId={null} onClose={() => setShowSearch(false)} customAction={addToWatchlist} customRemoveAction={removeFromWatchlist} />}
       </AnimatePresence>
 
       <AnimatePresence>

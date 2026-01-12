@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef } from 'react'
-import { motion } from 'framer-motion' 
-import { X, Search, Filter, Book, Ticket, Users, ChevronDown, ChevronUp, PenLine, Minus } from 'lucide-react' 
+import { motion, AnimatePresence } from 'framer-motion' 
+import { X, Search, Filter, Book, Ticket, Users, ChevronDown, ChevronUp, Minus, Plus, Check } from 'lucide-react' 
 import { supabase } from './supabaseClient'
 
 const DEFAULT_GENRES = ['Action', 'Comedy', 'Drama', 'Fantasy', 'Horror', 'Romance', 'Sci-Fi', 'Thriller', 'Family']
 const COMMON_GENRES = ['Action', 'Adventure', 'Comedy', 'Documentary', 'Holiday', 'Horror', 'Romance', 'Sci-Fi', 'Mystery & thriller', 'Fantasy']
 
-export default function SearchMovies({ eventId, groupId, onClose, onNominate, customAction }) {
+export default function SearchMovies({ eventId, groupId, onClose, onNominate, customAction, customRemoveAction }) {
   const isEventMode = !!eventId
+  const isWatchlistMode = !isEventMode
   const [activeTab, setActiveTab] = useState('search') 
   const [searchTerm, setSearchTerm] = useState('')
   const [results, setResults] = useState([])
@@ -15,10 +16,13 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
   const [genres, setGenres] = useState(DEFAULT_GENRES)
   const searchRequestId = useRef(0)
   const searchInputRef = useRef(null)
+  const [currentUserId, setCurrentUserId] = useState(null)
   
   // Lists
   const [myWatchlist, setMyWatchlist] = useState([])
-  const [crewWatchlist, setCrewWatchlist] = useState([])
+  const [crewWatchlistEntries, setCrewWatchlistEntries] = useState([])
+  const [crewOnlyMine, setCrewOnlyMine] = useState(false)
+  const [collapsedCrewGroups, setCollapsedCrewGroups] = useState({})
   
   // Filters
   const [showFilters, setShowFilters] = useState(false)
@@ -38,6 +42,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
   const [theaterMovie, setTheaterMovie] = useState('')
   const [theaterName, setTheaterName] = useState('')
   const [theaterNotes, setTheaterNotes] = useState('')
+  const [writeInError, setWriteInError] = useState('')
 
   const parsedWriteInScore = Number.parseInt(newScore, 10)
   const writeInScoreColor = Number.isFinite(parsedWriteInScore)
@@ -55,7 +60,21 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
     }
     if (activeTab === 'watchlist' && watchlistScope === 'mine') fetchMyWatchlist()
     if (activeTab === 'watchlist' && watchlistScope === 'crew') fetchCrewWatchlists()
-  }, [searchTerm, activeTab, watchlistScope, genreFilters, minScore, useScoreFilter, isWritingIn])
+  }, [searchTerm, activeTab, watchlistScope, genreFilters, minScore, useScoreFilter, isWritingIn, eventId, groupId])
+
+  useEffect(() => {
+    if (isWatchlistMode) fetchMyWatchlist()
+  }, [isWatchlistMode])
+
+  useEffect(() => {
+    let isMounted = true
+    async function loadUser() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (isMounted) setCurrentUserId(user?.id || null)
+    }
+    loadUser()
+    return () => { isMounted = false }
+  }, [])
 
   useEffect(() => {
     let isMounted = true
@@ -109,34 +128,58 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
   async function fetchMyWatchlist() {
     const { data: { user } } = await supabase.auth.getUser()
     const { data } = await supabase.from('user_wishlist').select('movie:movies (*)').eq('user_id', user.id)
-    setMyWatchlist(applyFilters(data ? data.map(i => i.movie) : []))
+    setMyWatchlist(data ? data.map(i => i.movie) : [])
   }
 
   // 3. CREW WATCHLISTS (New!)
   async function fetchCrewWatchlists() {
-    if (!groupId) return
+    if (!eventId && !groupId) return
     const { data: { user } } = await supabase.auth.getUser()
-    
-    // Get all group members EXCEPT me
-    const { data: members } = await supabase.from('group_members').select('user_id').eq('group_id', groupId).neq('user_id', user.id)
-    const memberIds = members.map(m => m.user_id)
+    const userId = user?.id
 
-    if (memberIds.length === 0) return setCrewWatchlist([])
+    let memberRows = []
+    if (eventId) {
+      const { data } = await supabase
+        .from('event_attendees')
+        .select('user_id, profiles(display_name, username)')
+        .eq('event_id', eventId)
+      memberRows = data || []
+    } else {
+      const { data } = await supabase
+        .from('group_members')
+        .select('user_id, profiles(display_name, username)')
+        .eq('group_id', groupId)
+      memberRows = data || []
+    }
 
-    // Get their watchlists
-    const { data } = await supabase.from('user_wishlist').select('movie:movies (*)').in('user_id', memberIds)
-    
-    // Remove duplicates (if multiple friends want the same movie)
-    const uniqueMovies = []
-    const seenIds = new Set()
+    const nameByUserId = memberRows.reduce((acc, member) => {
+      const name = member.profiles?.display_name || member.profiles?.username || 'Movie Fan'
+      acc[member.user_id] = name
+      return acc
+    }, {})
+
+    const memberIds = memberRows.map(m => m.user_id)
+    if (userId && !memberIds.includes(userId)) memberIds.push(userId)
+    if (memberIds.length === 0) return setCrewWatchlistEntries([])
+
+    const { data } = await supabase
+      .from('user_wishlist')
+      .select('movie:movies (*), user_id, profiles(display_name, username)')
+      .in('user_id', memberIds)
+
+    const movieMap = new Map()
     data?.forEach(item => {
-        if (!seenIds.has(item.movie.id)) {
-            uniqueMovies.push(item.movie)
-            seenIds.add(item.movie.id)
-        }
+      if (!item?.movie) return
+      const existing = movieMap.get(item.movie.id) || { movie: item.movie, users: [], userIds: new Set() }
+      const name = item.profiles?.display_name || item.profiles?.username || nameByUserId[item.user_id] || 'Movie Fan'
+      if (!existing.userIds.has(item.user_id)) {
+        existing.userIds.add(item.user_id)
+        existing.users.push({ id: item.user_id, name })
+      }
+      movieMap.set(item.movie.id, existing)
     })
-    
-    setCrewWatchlist(applyFilters(uniqueMovies))
+
+    setCrewWatchlistEntries(Array.from(movieMap.values()))
   }
 
   const sortedGenres = [...genres].sort((a, b) => a.localeCompare(b))
@@ -170,6 +213,30 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
 
   const clearGenreFilters = () => setGenreFilters([])
 
+  const filteredCrewEntries = (() => {
+    if (crewWatchlistEntries.length === 0) return []
+    const filteredMovies = applyFilters(crewWatchlistEntries.map(entry => entry.movie))
+    const allowedIds = new Set(filteredMovies.map(m => m.id))
+    const filtered = crewWatchlistEntries.filter(entry => allowedIds.has(entry.movie.id))
+    if (crewOnlyMine && currentUserId) {
+      return filtered.filter(entry => entry.userIds.has(currentUserId))
+    }
+    return filtered
+  })()
+
+  const crewGroups = (() => {
+    if (filteredCrewEntries.length === 0) return []
+    const grouped = new Map()
+    filteredCrewEntries.forEach(entry => {
+      const count = entry.users.length
+      if (!grouped.has(count)) grouped.set(count, [])
+      grouped.get(count).push(entry)
+    })
+    return Array.from(grouped.entries())
+      .sort((a, b) => b[0] - a[0])
+      .map(([count, entries]) => ({ count, entries }))
+  })()
+
   function buildTheaterDescription() {
     const parts = []
     if (theaterMovie.trim()) parts.push(`Movie: ${theaterMovie.trim()}`)
@@ -180,8 +247,13 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
   }
 
   async function handleWriteIn(isTheater = false) {
-    const titleToUse = isTheater ? (theaterMovie || "Movie Theater Trip") : newTitle
-    if (!titleToUse) return alert("Title required!")
+    const rawTitle = isTheater ? (theaterMovie || 'Movie Theater Trip') : (newTitle || searchTerm)
+    const titleToUse = rawTitle.trim()
+    if (!titleToUse) {
+      setWriteInError('Please enter a movie title before saving.')
+      return
+    }
+    setWriteInError('')
     const genresToUse = newGenres.length > 0 ? newGenres : [newGenreOption]
 
     const { data: movie } = await supabase.from('movies').insert([{ 
@@ -199,6 +271,38 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
     else onNominate(movie, isTheater) 
     onClose()
   }
+
+  async function handleWatchlistToggle(movie) {
+    const isInWatchlist = myWatchlist.some(item => item.id === movie.id)
+    if (isInWatchlist) {
+      if (customRemoveAction) {
+        await customRemoveAction(movie)
+      } else {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+        const { error } = await supabase
+          .from('user_wishlist')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('movie_id', movie.id)
+        if (error) return
+      }
+      setMyWatchlist(prev => prev.filter(item => item.id !== movie.id))
+      return
+    }
+
+    if (customAction) {
+      await customAction(movie)
+    } else {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { error } = await supabase.from('user_wishlist').insert([{ user_id: user.id, movie_id: movie.id }])
+      if (error) return
+    }
+    setMyWatchlist(prev => (prev.some(item => item.id === movie.id) ? prev : [movie, ...prev]))
+  }
+
+  const filteredMyWatchlist = applyFilters(myWatchlist)
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(5px)' }}>
@@ -227,18 +331,10 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
 
         {/* TABS */}
         {isEventMode && (
-          <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', overflowX: 'auto', paddingBottom: '5px' }}>
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', overflowX: 'auto', paddingBottom: '5px', justifyContent: 'center' }}>
               <TabButton active={activeTab === 'search'} onClick={() => {setActiveTab('search'); setIsWritingIn(false)}}><Search size={16}/> Search</TabButton>
               <TabButton active={activeTab === 'watchlist'} onClick={() => { setActiveTab('watchlist'); setIsWritingIn(false) }}><Book size={16}/> Watchlist</TabButton>
-              <TabButton active={activeTab === 'writein'} onClick={() => { setActiveTab('writein'); setIsWritingIn(true) }}><PenLine size={16}/> Write In</TabButton>
               <TabButton active={activeTab === 'theater'} onClick={() => { setActiveTab('theater'); setIsWritingIn(false) }}><Ticket size={16}/> Theatre</TabButton>
-          </div>
-        )}
-
-        {!isEventMode && (
-          <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
-            <TabButton active={activeTab === 'search'} onClick={() => { setActiveTab('search'); setIsWritingIn(false) }}><Search size={16}/> Search</TabButton>
-            <TabButton active={activeTab === 'writein'} onClick={() => { setActiveTab('writein'); setIsWritingIn(true) }}><PenLine size={16}/> Write In</TabButton>
           </div>
         )}
 
@@ -257,7 +353,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                 Welcome to nominations!
               </div>
               <div className="text-sm" style={{ color: '#cbd5e1' }}>
-                You have four different ways to nominate movies. You can search the database, check out you or your friends watchlist, or suggest going to a theater! Once options are nominated, users can vote for the movies they want
+                You have 3 different ways to nominate movies. You can search for the movie, check out what is on you or your friends watchlists, or suggest going to a theater! Once options are nominated, users can vote for the movies they want
               </div>
             </div>
             <button
@@ -297,7 +393,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                           ref={searchInputRef}
                           type="text"
                           enterKeyHint="search"
-                          placeholder="Search list..."
+                          placeholder="Search for movie..."
                           value={searchTerm}
                           onChange={(e) => setSearchTerm(e.target.value)}
                           style={{background:'transparent', border:'none', padding:0, height:'auto', width: '100%'}}
@@ -407,38 +503,65 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
 
         {/* WATCHLIST SUB-TABS */}
         {activeTab === 'watchlist' && (
-          <div style={{ display: 'flex', gap: '10px', marginBottom: '12px' }}>
-            <button
-              onClick={() => setWatchlistScope('mine')}
-              style={{ flex: 1, padding: '10px', borderRadius: '12px', background: watchlistScope === 'mine' ? '#00E5FF' : 'rgba(255,255,255,0.1)', color: watchlistScope === 'mine' ? 'black' : 'white', fontWeight: 700 }}
-            >
-              My Watchlist
-            </button>
-            <button
-              onClick={() => setWatchlistScope('crew')}
-              style={{ flex: 1, padding: '10px', borderRadius: '12px', background: watchlistScope === 'crew' ? '#00E5FF' : 'rgba(255,255,255,0.1)', color: watchlistScope === 'crew' ? 'black' : 'white', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-            >
-              <Users size={16} /> Crew's Watchlist
-            </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '12px' }}>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={() => setWatchlistScope('mine')}
+                style={{ flex: 1, padding: '10px', borderRadius: '12px', background: watchlistScope === 'mine' ? '#00E5FF' : 'rgba(255,255,255,0.1)', color: watchlistScope === 'mine' ? 'black' : 'white', fontWeight: 700 }}
+              >
+                My Watchlist
+              </button>
+              <button
+                onClick={() => setWatchlistScope('crew')}
+                style={{ flex: 1, padding: '10px', borderRadius: '12px', background: watchlistScope === 'crew' ? '#00E5FF' : 'rgba(255,255,255,0.1)', color: watchlistScope === 'crew' ? 'black' : 'white', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+              >
+                <Users size={16} /> Crew's Watchlist
+              </button>
+            </div>
+            {watchlistScope === 'crew' && (
+              <div className="flex-between" style={{ background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px' }}>
+                <span className="text-sm">Only show movies also my watchlist</span>
+                <input className="toggle" type="checkbox" checked={crewOnlyMine} onChange={(e) => setCrewOnlyMine(e.target.checked)} />
+              </div>
+            )}
           </div>
         )}
 
         {/* LIST RENDERING */}
         <div style={{ flex: 1, overflowY: 'auto' }}>
-            {activeTab === 'search' && !isWritingIn && results.map(m => <MovieRow key={m.id} movie={m} onSelect={() => handleSelect(m)} />)}
-            {activeTab === 'watchlist' && watchlistScope === 'mine' && myWatchlist.map(m => <MovieRow key={m.id} movie={m} onSelect={() => handleSelect(m)} />)}
-            {activeTab === 'watchlist' && watchlistScope === 'crew' && crewWatchlist.map(m => <MovieRow key={m.id} movie={m} onSelect={() => handleSelect(m)} />)}
+            {activeTab === 'search' && !isWritingIn && results.map(m => (
+              <MovieRow
+                key={m.id}
+                movie={m}
+                onSelect={isEventMode ? () => handleSelect(m) : undefined}
+                showWatchlistAction={isWatchlistMode}
+                isInWatchlist={myWatchlist.some(item => item.id === m.id)}
+                onToggleWatchlist={handleWatchlistToggle}
+              />
+            ))}
+            {activeTab === 'watchlist' && watchlistScope === 'mine' && filteredMyWatchlist.map(m => <MovieRow key={m.id} movie={m} onSelect={() => handleSelect(m)} />)}
+            {activeTab === 'watchlist' && watchlistScope === 'crew' && crewGroups.map(group => (
+              <div key={group.count} style={{ marginBottom: '16px' }}>
+                <button
+                  onClick={() => setCollapsedCrewGroups(prev => ({ ...prev, [group.count]: !prev[group.count] }))}
+                  style={{ width: '100%', background: 'none', border: 'none', color: '#00E5FF', marginBottom: '10px', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                >
+                  {collapsedCrewGroups[group.count] ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
+                  <span className="text-sm" style={{ letterSpacing: '1px' }}>
+                    In {group.count} member{group.count === 1 ? '' : 's'} watchlists
+                  </span>
+                </button>
+                {!collapsedCrewGroups[group.count] && group.entries.map(entry => (
+                  <CrewWatchlistRow key={entry.movie.id} entry={entry} onSelect={() => handleSelect(entry.movie)} />
+                ))}
+              </div>
+            ))}
             
             {/* Empty States */}
-            {activeTab === 'search' && !isWritingIn && isEventMode && (
-              <div style={{ padding:'20px', textAlign:'center' }}>
-                <button onClick={() => { setIsWritingIn(true); setActiveTab('writein') }} style={{ background:'#00E5FF', color:'black', padding:'10px 20px', borderRadius:'20px', fontWeight: 700 }}>
-                  + Write In Movie
-                </button>
-              </div>
-            )}
-            {activeTab === 'watchlist' && watchlistScope === 'crew' && crewWatchlist.length === 0 && (
-              <p className="text-sm" style={{textAlign:'center'}}>Your friends have empty watchlists.</p>
+            {activeTab === 'watchlist' && watchlistScope === 'crew' && filteredCrewEntries.length === 0 && (
+              <p className="text-sm" style={{textAlign:'center'}}>
+                {crewOnlyMine ? 'Nothing from your watchlist yet.' : 'No watchlists found for this event.'}
+              </p>
             )}
             
             {/* Write In Form */}
@@ -470,6 +593,11 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                       onChange={(e) => setNewDescription(e.target.value)}
                       style={{ minHeight: '90px', resize: 'none' }}
                     />
+                    {writeInError && (
+                      <div className="glass-panel" style={{ border: '1px solid rgba(255,0,85,0.35)', background: 'rgba(255,0,85,0.12)', color: '#ffd1dc', textAlign: 'center' }}>
+                        {writeInError}
+                      </div>
+                    )}
                     <div className="flex-gap" style={{ alignItems: 'flex-start' }}>
                       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         <div className="text-sm" style={{ color: '#9ca3af' }}>Add what genres you think it hits!</div>
@@ -529,6 +657,18 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                 </div>
             )}
         </div>
+
+        {activeTab === 'search' && !isWritingIn && (
+          <button
+            onClick={() => {
+              setActiveTab('search')
+              setIsWritingIn(true)
+            }}
+            style={{ width: '100%', marginTop: '12px', background: '#00E5FF', color: 'black', padding: '12px', borderRadius: '12px', fontWeight: 700 }}
+          >
+            + Write In Movie
+          </button>
+        )}
       </motion.div>
     </div>
   )
@@ -538,9 +678,94 @@ function TabButton({ active, children, onClick }) {
     return <button onClick={onClick} style={{ padding: '8px 16px', borderRadius: '20px', whiteSpace: 'nowrap', background: active ? 'white' : 'rgba(255,255,255,0.1)', color: active ? 'black' : 'white', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem' }}>{children}</button>
 }
 
-function MovieRow({ movie, onSelect }) {
+function MovieRow({ movie, onSelect, showWatchlistAction = false, isInWatchlist = false, onToggleWatchlist }) {
     const description = movie.description?.trim()
     const scoreColor = movie.rt_score >= 80 ? '#4ade80' : movie.rt_score >= 60 ? '#facc15' : '#94a3b8'
+    const yearLabel = movie.year ? ` (${movie.year})` : ''
+    const isClickable = typeof onSelect === 'function'
+    return (
+      <div onClick={isClickable ? onSelect : undefined} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', marginBottom: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', cursor: isClickable ? 'pointer' : 'default', gap: '12px' }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: '600' }}>
+            {movie.title}
+            {movie.year ? (
+              <span className="text-sm" style={{ color: '#94a3b8', marginLeft: '6px' }}>{yearLabel}</span>
+            ) : null}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+            {movie.rt_score !== null && movie.rt_score !== undefined && (
+              <span
+                style={{
+                  border: `1px solid ${scoreColor}`,
+                  color: scoreColor,
+                  padding: '4px 8px',
+                  borderRadius: '10px',
+                  fontSize: '0.8rem',
+                  fontWeight: 600
+                }}
+              >
+                🍅 {movie.rt_score}%
+              </span>
+            )}
+            {(movie.rt_score !== null && movie.rt_score !== undefined) && (
+              <span className="text-sm" style={{ color: '#64748b' }}>|</span>
+            )}
+            <div className="text-sm">{movie.genre?.join(', ')}</div>
+          </div>
+          {description && (
+            <div className="text-sm" style={{ color: '#9ca3af', marginTop: '6px' }}>
+              {description}
+            </div>
+          )}
+        </div>
+        {showWatchlistAction && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onToggleWatchlist?.(movie)
+            }}
+            style={{
+              border: `1px solid ${isInWatchlist ? 'rgba(0,229,255,0.45)' : 'rgba(255,255,255,0.35)'}`,
+              background: isInWatchlist ? 'rgba(0,229,255,0.18)' : 'rgba(255,255,255,0.08)',
+              color: isInWatchlist ? '#00E5FF' : '#ffffff',
+              width: '34px',
+              height: '34px',
+              borderRadius: '999px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              flexShrink: 0
+            }}
+            aria-pressed={isInWatchlist}
+            aria-label={isInWatchlist ? 'Remove from watchlist' : 'Add to watchlist'}
+            title={isInWatchlist ? 'Remove from watchlist' : 'Add to watchlist'}
+          >
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.span
+                key={isInWatchlist ? 'check' : 'plus'}
+                initial={{ scale: 0.6, rotate: -90, opacity: 0 }}
+                animate={{ scale: 1, rotate: 0, opacity: 1 }}
+                exit={{ scale: 0.6, rotate: 90, opacity: 0 }}
+                transition={{ duration: 0.18 }}
+                style={{ display: 'flex' }}
+              >
+                {isInWatchlist ? <Check size={16} /> : <Plus size={16} />}
+              </motion.span>
+            </AnimatePresence>
+          </button>
+        )}
+      </div>
+    )
+}
+
+function CrewWatchlistRow({ entry, onSelect }) {
+    const { movie, users } = entry
+    const description = movie.description?.trim()
+    const scoreColor = movie.rt_score >= 80 ? '#4ade80' : movie.rt_score >= 60 ? '#facc15' : '#94a3b8'
+    const names = users.map(u => u.name)
+    const displayNames = names.length > 4 ? `${names.slice(0, 4).join(', ')} +${names.length - 4} more` : names.join(', ')
     return (
       <div onClick={onSelect} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', marginBottom: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', cursor: 'pointer', gap: '12px' }}>
         <div style={{ flex: 1 }}>
@@ -549,6 +774,11 @@ function MovieRow({ movie, onSelect }) {
           {description && (
             <div className="text-sm" style={{ color: '#9ca3af', marginTop: '6px' }}>
               {description}
+            </div>
+          )}
+          {displayNames && (
+            <div className="text-sm" style={{ color: '#cbd5e1', marginTop: '6px' }}>
+              On: {displayNames}
             </div>
           )}
         </div>

@@ -6,6 +6,7 @@ import { ThumbsUp, ThumbsDown, Heart, Plus, Trophy, MapPin, Calendar, Ticket, Ch
 import SearchMovies from './SearchMovies'
 import ResultsView from './ResultsView'
 import MovieCard from './MovieCard'
+import LoadingSpinner from './LoadingSpinner'
 
 export default function MovieRoom() {
   const { code } = useParams() // This is the EVENT ID
@@ -93,7 +94,7 @@ export default function MovieRoom() {
     window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank')
   }
 
-  if (loading) return <div style={{padding:'40px', textAlign:'center'}}>Loading Event...</div>
+  if (loading) return <LoadingSpinner label="Loading event..." />
   if (!event) return <div style={{padding:'40px', textAlign:'center'}}>Event not found.</div>
 
   return (

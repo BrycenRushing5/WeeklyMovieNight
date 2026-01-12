@@ -24,6 +24,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
   const [myWatchlist, setMyWatchlist] = useState([])
   const [crewWatchlistEntries, setCrewWatchlistEntries] = useState([])
   const [crewOnlyMine, setCrewOnlyMine] = useState(false)
+  const [crewExcludeMe, setCrewExcludeMe] = useState(false)
   const [collapsedCrewGroups, setCollapsedCrewGroups] = useState({})
   
   // Filters
@@ -264,9 +265,16 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
     if (crewWatchlistEntries.length === 0) return []
     const filteredMovies = applyFilters(crewWatchlistEntries.map(entry => entry.movie))
     const allowedIds = new Set(filteredMovies.map(m => m.id))
-    const filtered = crewWatchlistEntries.filter(entry => allowedIds.has(entry.movie.id))
+    let filtered = crewWatchlistEntries.filter(entry => allowedIds.has(entry.movie.id))
     if (crewOnlyMine && currentUserId) {
       return filtered.filter(entry => entry.userIds.has(currentUserId))
+    }
+    if (crewExcludeMe && currentUserId) {
+      filtered = filtered.map(entry => {
+        const users = entry.users.filter(user => user.id !== currentUserId)
+        const userIds = new Set(users.map(user => user.id))
+        return { ...entry, users, userIds }
+      }).filter(entry => entry.users.length > 0)
     }
     return filtered
   })()
@@ -602,9 +610,15 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
               </button>
             </div>
             {watchlistScope === 'crew' && (
-              <div className="flex-between" style={{ background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px' }}>
-                <span className="text-sm">Only show movies also my watchlist</span>
-                <input className="toggle" type="checkbox" checked={crewOnlyMine} onChange={(e) => setCrewOnlyMine(e.target.checked)} />
+              <div className="flex-between" style={{ background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', gap: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <input className="toggle" type="checkbox" checked={crewOnlyMine} onChange={(e) => setCrewOnlyMine(e.target.checked)} />
+                  <span className="text-sm">Only include my watchlist</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <input className="toggle" type="checkbox" checked={crewExcludeMe} onChange={(e) => setCrewExcludeMe(e.target.checked)} />
+                  <span className="text-sm">Exclude me</span>
+                </div>
               </div>
             )}
           </div>

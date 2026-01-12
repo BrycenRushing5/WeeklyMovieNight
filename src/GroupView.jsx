@@ -171,6 +171,8 @@ export default function GroupView({ session }) {
 
   if (!group) return <LoadingSpinner label="Loading crew..." />
 
+  const maxNameLines = group?.name && group.name.length > 28 ? 3 : 2
+
   return (
     <>
     <div style={{ padding: '16px', paddingRight: '28px', paddingBottom: '80px', height: '100%', overflowY: 'auto', scrollbarGutter: 'stable' }}>
@@ -182,7 +184,22 @@ export default function GroupView({ session }) {
       <div style={{ marginBottom: '30px' }}>
         {!isEditingName ? (
           <div className="flex-between" style={{ gap: '10px', alignItems: 'center' }}>
-            <h1 style={{ fontSize: '2.5rem', marginBottom: '10px' }}>{group.name}</h1>
+            <h1
+              style={{
+                fontSize: 'clamp(1.6rem, 4.2vw, 2.5rem)',
+                marginBottom: '10px',
+                lineHeight: 1.1,
+                display: '-webkit-box',
+                WebkitLineClamp: maxNameLines,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+                wordBreak: 'break-word',
+                overflowWrap: 'anywhere'
+              }}
+              title={group.name}
+            >
+              {group.name}
+            </h1>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               <button onClick={() => setIsEditingName(true)} style={{ background: 'rgba(255,255,255,0.1)', color: 'white', padding: '8px 12px', borderRadius: '10px' }}>
                 Edit

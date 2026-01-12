@@ -411,7 +411,10 @@ export default function EventView() {
     
     // Check both lists to prevent duplicates
     const allNoms = [...myNominations, ...crewNominations]
-    const alreadyExists = movie ? allNoms.find(n => n.movie?.id === movie.id) : false
+    const nominationType = isTheater ? 'theater' : 'streaming'
+    const alreadyExists = movie
+      ? allNoms.find(n => n.movie?.id === movie.id && n.nomination_type === nominationType)
+      : false
     if (alreadyExists) return alert("Already nominated!")
 
     const { error } = await supabase.from('nominations').insert([
@@ -419,7 +422,7 @@ export default function EventView() {
           event_id: code, 
           movie_id: movie?.id || null, 
           nominated_by: user.id, 
-          nomination_type: isTheater ? 'theater' : 'streaming',
+          nomination_type: nominationType,
           theater_name: theaterDetails?.theater_name || null,
           theater_notes: theaterDetails?.theater_notes || null
         } 

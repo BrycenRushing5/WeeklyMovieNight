@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { supabase } from './supabaseClient'
 import { X, Star, ThumbsUp } from 'lucide-react'
+import { POSTER_BASE_URL } from './tmdbClient'
 
 export default function RateMovie({ eventId, movie, onClose }) {
   const [rating, setRating] = useState(0)
@@ -50,26 +51,34 @@ export default function RateMovie({ eventId, movie, onClose }) {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      style={{ position: 'fixed', inset: 0, zIndex: 2500, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(5px)' }}
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 backdrop-blur-sm"
     >
       <motion.div
         initial={{ y: '100%' }}
         animate={{ y: 0 }}
         exit={{ y: '100%' }}
         transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-        style={{ width: '100%', maxWidth: '560px', height: '75vh', background: '#141424', borderTopLeftRadius: '24px', borderTopRightRadius: '24px', padding: '20px', display: 'flex', flexDirection: 'column' }}
+        className="w-full max-w-2xl h-[75vh] bg-slate-900 border-t border-white/10 rounded-t-3xl p-5 flex flex-col"
       >
-        <div className="flex-between" style={{ marginBottom: '14px' }}>
-          <div>
-            <h2 style={{ margin: 0 }}>Rate {movie.title}</h2>
-            <div className="text-sm" style={{ color: '#aaa' }}>Post-watch ratings help your crew learn your taste.</div>
+        {(() => {
+          const posterUrl = movie.poster_path ? `${POSTER_BASE_URL}${movie.poster_path}` : null
+          return (
+        <div className="flex justify-between items-center mb-3.5">
+          <div className="flex gap-3 items-center">
+            {posterUrl && <img src={posterUrl} alt={movie.title} className="w-10 h-14 object-cover rounded-md" />}
+            <div>
+            <h2 className="m-0 text-xl font-bold">Rate {movie.title}</h2>
+            <div className="text-sm text-slate-400">Post-watch ratings help your crew learn your taste.</div>
           </div>
-          <button onClick={onClose} style={{ background: '#333', padding: '8px', borderRadius: '50%', color: 'white' }}><X size={18} /></button>
+          </div>
+          <button onClick={onClose} className="bg-slate-700 p-2 rounded-full text-white"><X size={18} /></button>
         </div>
+          )
+        })()}
 
-        <div className="glass-panel" style={{ marginBottom: '16px' }}>
-          <div className="text-sm" style={{ marginBottom: '10px', fontWeight: 700 }}>Your Rating (1-10)</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '10px' }}>
+        <div className="bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-2xl p-4 mb-4">
+          <div className="text-sm mb-2.5 font-bold">Your Rating (1-10)</div>
+          <div className="grid grid-cols-5 gap-2.5">
             {Array.from({ length: 10 }).map((_, idx) => {
               const value = idx + 1
               const isActive = rating === value
@@ -77,14 +86,7 @@ export default function RateMovie({ eventId, movie, onClose }) {
                 <button
                   key={value}
                   onClick={() => setRating(value)}
-                  style={{
-                    padding: '12px 0',
-                    borderRadius: '12px',
-                    border: isActive ? '1px solid #00E5FF' : '1px solid rgba(255,255,255,0.08)',
-                    background: isActive ? 'rgba(0,229,255,0.2)' : 'rgba(255,255,255,0.05)',
-                    color: isActive ? '#00E5FF' : '#ddd',
-                    fontWeight: 700
-                  }}
+                  className={`py-3 rounded-lg border font-bold ${isActive ? 'border-accent bg-accent/20 text-accent' : 'border-white/10 bg-white/5 text-slate-300'}`}
                 >
                   {value}
                 </button>
@@ -93,36 +95,23 @@ export default function RateMovie({ eventId, movie, onClose }) {
           </div>
         </div>
 
-        <div className="glass-panel" style={{ marginBottom: '16px' }}>
-          <div className="text-sm" style={{ marginBottom: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Star size={16} color="#FFD166" /> Quick Take
+        <div className="bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-2xl p-4 mb-4">
+          <div className="text-sm mb-2.5 font-bold flex items-center gap-1.5">
+            <Star size={16} className="text-amber-300" /> Quick Take
           </div>
           <textarea
             placeholder="Drop a quick reaction or quote..."
             value={comment}
             onChange={(e) => setComment(e.target.value)}
-            style={{ minHeight: '110px', width: '100%' }}
+            className="min-h-[110px] w-full bg-black/30 border border-white/10 text-white p-3.5 rounded-lg text-base"
           />
           <button
             type="button"
             onClick={() => setWouldWatchAgain(prev => !prev)}
-            style={{
-              marginTop: '12px',
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              padding: '10px 12px',
-              borderRadius: '12px',
-              border: wouldWatchAgain ? '1px solid rgba(0,229,255,0.6)' : '1px solid rgba(255,255,255,0.12)',
-              background: wouldWatchAgain ? 'rgba(0,229,255,0.18)' : 'rgba(255,255,255,0.05)',
-              color: wouldWatchAgain ? '#00E5FF' : '#cbd5e1',
-              fontWeight: 700
-            }}
+            className={`mt-3 w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border font-bold ${wouldWatchAgain ? 'border-accent/60 bg-accent/20 text-accent' : 'border-white/10 bg-white/5 text-slate-300'}`}
             aria-pressed={wouldWatchAgain}
           >
-            <ThumbsUp size={16} color={wouldWatchAgain ? '#00E5FF' : '#cbd5e1'} />
+            <ThumbsUp size={16} />
             Would watch again
           </button>
         </div>
@@ -130,7 +119,7 @@ export default function RateMovie({ eventId, movie, onClose }) {
         <button
           onClick={handleSubmit}
           disabled={saving}
-          style={{ marginTop: 'auto', background: '#00E5FF', color: 'black', padding: '14px', borderRadius: '14px', fontWeight: 800 }}
+          className="mt-auto bg-accent text-black p-3.5 rounded-2xl font-extrabold"
         >
           {saving ? 'Saving...' : 'Submit Rating'}
         </button>

@@ -5,6 +5,7 @@ import { Calendar, MapPin, Plus, ArrowRight, Users, Check, Clock, Link as LinkIc
 import { ChevronLeft } from 'lucide-react' // Add Icon
 import { useNavigate } from 'react-router-dom' // Add Hook
 import LoadingSpinner from './LoadingSpinner'
+import DateTimePickerSheet from './DateTimePickerSheet'
 
 export default function GroupView({ session }) {
     const navigate = useNavigate()
@@ -295,7 +296,7 @@ export default function GroupView({ session }) {
 
       {/* UPDATE CREATE EVENT SECTION FOR CALENDAR */}
       {showCreate && (
-        <div className="glass-panel" style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div className="bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-2xl p-4" style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <input placeholder="Event Title (e.g. Friday Horror)" value={newEventTitle} onChange={(e) => setNewEventTitle(e.target.value)} autoFocus />
             <div className="flex-gap">
                 <button
@@ -332,7 +333,7 @@ export default function GroupView({ session }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
             {events.map(event => (
                 <Link key={event.id} to={`/room/${event.id}`} state={{ from: 'group', groupId }} style={{ textDecoration: 'none' }}>
-                    <div className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div className="bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-2xl p-4 flex justify-between items-center hover:bg-slate-800/50 transition-colors">
                         <div>
                             <h3 style={{ margin: '0 0 5px 0', fontSize: '1.2rem' }}>{event.title}</h3>
                             <div className="flex-gap text-sm">
@@ -363,181 +364,4 @@ export default function GroupView({ session }) {
     />
     </>
   )
-}
-
-function DateTimePickerSheet({
-  show,
-  onClose,
-  displayMonth,
-  setDisplayMonth,
-  pickedDate,
-  setPickedDate,
-  pickedTime,
-  setPickedTime,
-  pickedPeriod,
-  setPickedPeriod,
-  onConfirm
-}) {
-  if (!show) return null
-  const days = buildCalendarDays(displayMonth)
-  const monthLabel = displayMonth.toLocaleString([], { month: 'long', year: 'numeric' })
-  const timeSlots = getTimeSlots(30)
-  const today = new Date()
-  const isSameDay = (d1, d2) => d1 && d2 && d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate()
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(5px)' }}>
-      <div style={{ width: '100%', maxWidth: '500px', height: '80vh', background: '#1a1a2e', borderTopLeftRadius: '24px', borderTopRightRadius: '24px', padding: '20px', display: 'flex', flexDirection: 'column' }}>
-        <div className="flex-between" style={{ marginBottom: '12px' }}>
-          <h2 style={{ margin: 0 }}>Pick Date & Time</h2>
-          <button onClick={onClose} style={{ background: '#333', padding: '8px', borderRadius: '50%', color: 'white' }}>X</button>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-          <button
-            onClick={() => setDisplayMonth(new Date(displayMonth.getFullYear(), displayMonth.getMonth() - 1, 1))}
-            style={{ background: 'rgba(255,255,255,0.1)', color: 'white', padding: '6px 10px', borderRadius: '10px' }}
-          >
-            Prev
-          </button>
-          <div style={{ fontWeight: 700 }}>{monthLabel}</div>
-          <button
-            onClick={() => setDisplayMonth(new Date(displayMonth.getFullYear(), displayMonth.getMonth() + 1, 1))}
-            style={{ background: 'rgba(255,255,255,0.1)', color: 'white', padding: '6px 10px', borderRadius: '10px' }}
-          >
-            Next
-          </button>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px', marginBottom: '10px' }}>
-          {['S','M','T','W','T','F','S'].map(d => (
-            <div key={d} className="text-sm" style={{ textAlign: 'center' }}>{d}</div>
-          ))}
-          {days.map((day, idx) => {
-            if (!day) return <div key={`e-${idx}`} />
-            const dateObj = new Date(displayMonth.getFullYear(), displayMonth.getMonth(), day)
-            const selected = isSameDay(dateObj, pickedDate)
-            const isToday = isSameDay(dateObj, today)
-            return (
-              <button
-                key={`${displayMonth.getMonth()}-${day}`}
-                onClick={() => setPickedDate(dateObj)}
-                style={{
-                  padding: '8px 0',
-                  borderRadius: '10px',
-                  background: selected ? '#00E5FF' : 'rgba(255,255,255,0.08)',
-                  color: selected ? 'black' : 'white',
-                  border: isToday && !selected ? '1px solid #00E5FF' : 'none'
-                }}
-              >
-                {day}
-              </button>
-            )
-          })}
-        </div>
-
-        <div style={{ marginTop: '8px', marginBottom: '10px', fontWeight: 600 }}>Time</div>
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
-          <button
-            onClick={() => setPickedPeriod('AM')}
-            style={{
-              flex: 1,
-              padding: '8px',
-              borderRadius: '12px',
-              background: pickedPeriod === 'AM' ? '#00E5FF' : 'rgba(255,255,255,0.08)',
-              color: pickedPeriod === 'AM' ? 'black' : 'white',
-              fontWeight: 600
-            }}
-          >
-            AM
-          </button>
-          <button
-            onClick={() => setPickedPeriod('PM')}
-            style={{
-              flex: 1,
-              padding: '8px',
-              borderRadius: '12px',
-              background: pickedPeriod === 'PM' ? '#00E5FF' : 'rgba(255,255,255,0.08)',
-              color: pickedPeriod === 'PM' ? 'black' : 'white',
-              fontWeight: 600
-            }}
-          >
-            PM
-          </button>
-        </div>
-        <div style={{ flex: 1, overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-          {timeSlots.map(t => {
-            const candidate = to24Time(t.hour, t.minute, pickedPeriod)
-            const isSelected = pickedTime === candidate
-            return (
-            <button
-              key={t.label}
-              onClick={() => setPickedTime(candidate)}
-              style={{
-                padding: '10px 0',
-                borderRadius: '10px',
-                background: isSelected ? '#00E5FF' : 'rgba(255,255,255,0.08)',
-                color: isSelected ? 'black' : 'white',
-                fontWeight: 600
-              }}
-            >
-              {t.label}
-            </button>
-            )
-          })}
-        </div>
-
-        <button
-          onClick={onConfirm}
-          style={{
-            marginTop: '14px',
-            background: '#00E5FF',
-            color: 'black',
-            padding: '12px',
-            borderRadius: '999px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: '100%',
-            fontWeight: 700
-          }}
-        >
-          Confirm Date & Time
-        </button>
-      </div>
-    </div>
-  )
-}
-
-function getTimeSlots(stepMinutes = 30) {
-  const slots = []
-  for (let h = 1; h <= 12; h++) {
-    for (let m = 0; m < 60; m += stepMinutes) {
-      const label = `${h}:${String(m).padStart(2, '0')}`
-      slots.push({ hour: h, minute: m, label })
-    }
-  }
-  return slots
-}
-
-function to24Hour(hour12, period) {
-  if (period === 'AM') return hour12 === 12 ? 0 : hour12
-  return hour12 === 12 ? 12 : hour12 + 12
-}
-
-function to24Time(hour12, minute, period) {
-  const hour24 = to24Hour(hour12, period)
-  return `${String(hour24).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
-}
-
-function buildCalendarDays(monthDate) {
-  const year = monthDate.getFullYear()
-  const month = monthDate.getMonth()
-  const firstDay = new Date(year, month, 1)
-  const startWeekday = firstDay.getDay()
-  const daysInMonth = new Date(year, month + 1, 0).getDate()
-  const cells = []
-  for (let i = 0; i < startWeekday; i++) cells.push(null)
-  for (let day = 1; day <= daysInMonth; day++) cells.push(day)
-  return cells
 }

@@ -143,20 +143,20 @@ export default function ProfileView({ session }) {
   if (loading) return <LoadingSpinner label="Loading profile..." />
 
   return (
-    <div style={{ paddingBottom: '40px', height: '100%', overflowY: 'auto', paddingRight: '12px' }}>
-      <Link to="/" style={{ textDecoration: 'none' }}>
-        <button style={{ background: 'none', color: '#888', padding: 0, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+    <div className="pb-10 h-full overflow-y-auto pr-3">
+      <Link to="/" className="no-underline">
+        <button className="bg-transparent text-slate-400 p-0 mb-5 flex items-center gap-1.5">
           <ChevronLeft size={20} /> Back to Hub
         </button>
       </Link>
 
-      <div className="glass-panel" style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '16px' }}>
-        <div style={{ width: '54px', height: '54px', minWidth: '54px', minHeight: '54px', flexShrink: 0, borderRadius: '50%', background: 'rgba(0,229,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <User size={26} color="#00E5FF" />
+      <div className="bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-2xl p-4 mb-5 flex items-center gap-4">
+        <div className="w-14 h-14 min-w-[54px] min-h-[54px] shrink-0 rounded-full bg-accent/20 flex items-center justify-center">
+          <User size={26} className="text-accent" />
         </div>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-            <h1 style={{ margin: 0, fontSize: '1.6rem' }}>{profileDisplayName || 'Movie Fan'}</h1>
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <h1 className="m-0 text-2xl font-bold">{profileDisplayName || 'Movie Fan'}</h1>
             {!isEditingDisplayName && (
               <button
                 type="button"
@@ -164,26 +164,26 @@ export default function ProfileView({ session }) {
                   setIsEditingDisplayName(true)
                   setDisplayNameError('')
                 }}
-                style={{ background: 'rgba(255,255,255,0.08)', color: '#fff', borderRadius: '999px', padding: '6px 12px', fontSize: '0.8rem', fontWeight: 600 }}
+                className="bg-white/10 text-white px-3 py-1.5 rounded-full text-xs font-semibold"
               >
                 Edit display name
               </button>
             )}
           </div>
           {isEditingDisplayName && (
-            <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <div className="mt-2.5 flex items-center gap-2 flex-wrap">
               <input
                 type="text"
                 value={editDisplayName}
                 onChange={(e) => setEditDisplayName(e.target.value)}
                 placeholder="New display name"
-                style={{ background: 'rgba(255,255,255,0.05)', border: 'none', padding: '8px 12px', borderRadius: '10px', color: 'white' }}
+                className="bg-black/30 border-none px-3 py-2 rounded-lg text-white"
               />
               <button
                 type="button"
                 onClick={handleDisplayNameSave}
                 disabled={savingDisplayName}
-                style={{ background: '#00E5FF', color: '#0b0b0b', borderRadius: '10px', padding: '8px 14px', fontWeight: 700 }}
+                className="bg-accent text-black px-3.5 py-2 rounded-lg font-bold"
               >
                 {savingDisplayName ? 'Saving...' : 'Save'}
               </button>
@@ -191,52 +191,52 @@ export default function ProfileView({ session }) {
                 type="button"
                 onClick={handleDisplayNameCancel}
                 disabled={savingDisplayName}
-                style={{ background: 'rgba(255,255,255,0.08)', color: '#fff', borderRadius: '10px', padding: '8px 12px', fontWeight: 600 }}
+                className="bg-white/10 text-white px-3 py-2 rounded-lg font-semibold"
               >
                 Cancel
               </button>
             </div>
           )}
           {displayNameError && (
-            <div className="text-sm" style={{ color: '#FF8FA3', marginTop: '6px' }}>
+            <div className="text-sm text-red-400 mt-1.5">
               {displayNameError}
             </div>
           )}
-          <div className="text-sm" style={{ color: '#aaa' }}>{session.user.email}</div>
+          <div className="text-sm text-slate-400">{session.user.email}</div>
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginBottom: '24px' }}>
-        <div className="glass-panel">
-          <div className="text-sm" style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#aaa' }}>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3 mb-6">
+        <div className="bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-2xl p-4">
+          <div className="text-sm flex items-center gap-1.5 text-slate-400">
             <Trophy size={16} /> The Coordinator
           </div>
-          <div style={{ fontSize: '1.8rem', fontWeight: 800 }}>{coordinatorCount}</div>
+          <div className="text-3xl font-extrabold">{coordinatorCount}</div>
           <div className="text-sm">Events you created</div>
         </div>
-        <div className="glass-panel">
-          <div className="text-sm" style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#aaa' }}>
+        <div className="bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-2xl p-4">
+          <div className="text-sm flex items-center gap-1.5 text-slate-400">
             <Target size={16} /> Nomination Success
           </div>
-          <div style={{ fontSize: '1.8rem', fontWeight: 800 }}>{nominationSuccess}%</div>
+          <div className="text-3xl font-extrabold">{nominationSuccess}%</div>
           <div className="text-sm">Your picks that won</div>
         </div>
-        <div className="glass-panel">
-          <div className="text-sm" style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#aaa' }}>
+        <div className="bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-2xl p-4">
+          <div className="text-sm flex items-center gap-1.5 text-slate-400">
             <Sparkles size={16} /> Genre Junkie
           </div>
-          <div style={{ fontSize: '1.4rem', fontWeight: 800 }}>{topGenre}</div>
+          <div className="text-xl font-extrabold">{topGenre}</div>
           <div className="text-sm">{genreCount ? `${genreCount} reviews` : 'No reviews yet'}</div>
         </div>
       </div>
 
-      <div style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <Film size={18} color="#00E5FF" />
-        <h2 style={{ margin: 0 }}>Review History</h2>
+      <div className="mb-3 flex items-center gap-2">
+        <Film size={18} className="text-accent" />
+        <h2 className="m-0 text-xl font-bold">Review History</h2>
       </div>
 
       {reviewHistory.length === 0 && (
-        <div className="text-sm" style={{ textAlign: 'center', color: '#888' }}>Rate a movie to build your history.</div>
+        <div className="text-sm text-center text-slate-500">Rate a movie to build your history.</div>
       )}
 
       {reviewHistory.map((review) => (
@@ -244,12 +244,12 @@ export default function ProfileView({ session }) {
           key={review.id}
           movie={review.movie}
           meta={
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#FFD166', fontWeight: 700 }}>
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="flex items-center gap-1.5 text-amber-300 font-bold">
                 <Star size={14} /> {review.rating}/10
               </span>
               {review.would_watch_again && (
-                <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#00E5FF', fontWeight: 600 }}>
+                <span className="flex items-center gap-1.5 text-accent font-semibold">
                   <ThumbsUp size={14} /> Would watch again
                 </span>
               )}
@@ -257,7 +257,7 @@ export default function ProfileView({ session }) {
           }
         >
           {review.comment && (
-            <p style={{ margin: 0, fontSize: '0.95rem', color: '#cbd5e1' }}>
+            <p className="m-0 text-base text-slate-300">
               "{review.comment}"
             </p>
           )}

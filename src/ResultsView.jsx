@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from './supabaseClient'
 import { X, Heart, ThumbsUp, ThumbsDown, Shuffle, PlayCircle, Minus } from 'lucide-react'
+import { POSTER_BASE_URL } from './tmdbClient'
 
 export default function ResultsView({ eventId, onClose, onSelected }) {
   const [movies, setMovies] = useState([])
@@ -184,36 +185,30 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'var(--bg-gradient)', overflowY: 'auto' }}
+      className="fixed inset-0 z-50 bg-slate-950 overflow-y-auto"
     >
       <motion.div
         initial={{ y: 24, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ type: 'spring', damping: 26, stiffness: 240 }}
-        style={{ maxWidth: '600px', margin: '0 auto', padding: '20px' }}
+        className="max-w-2xl mx-auto p-5"
       >
         
         {/* HEADER */}
-        <div className="flex-between" style={{ marginBottom: '24px' }}>
-            <h1 style={{ fontSize: '2rem', margin: 0 }}><span style={{color:'gold'}}>Selection Time</span></h1>
-            <button onClick={onClose} style={{ background: '#333', padding: '8px', borderRadius: '50%', color: 'white' }}><X size={20} /></button>
+        <div className="flex justify-between items-center mb-6">
+            <h1 className="text-3xl m-0"><span className="text-amber-400 font-bold">Selection Time</span></h1>
+            <button onClick={onClose} className="bg-slate-700 p-2 rounded-full text-white"><X size={20} /></button>
         </div>
 
         {showSelectionGuide && (
-          <div style={{ position: 'relative', marginBottom: '14px', paddingTop: '8px', paddingRight: '12px' }}>
+          <div className="relative mb-3.5 pt-2 pr-3">
             <div
-              style={{
-                padding: '14px',
-                borderRadius: '14px',
-                border: '1px dashed rgba(0,229,255,0.35)',
-                background: 'rgba(0,229,255,0.06)',
-                textAlign: 'center'
-              }}
+              className="p-3.5 rounded-2xl border-dashed border border-accent/40 bg-accent/10 text-center"
             >
-              <div style={{ fontWeight: 700, marginBottom: '6px', color: '#e2e8f0' }}>
+              <div className="font-bold mb-1.5 text-slate-200">
                 This is the selection page!
               </div>
-              <div className="text-sm" style={{ color: '#cbd5e1' }}>
+              <div className="text-sm text-slate-300">
                 This is where your group can select a movie. Once everyone has submitted their nominations and votes, use this page to select an option. You have multiple selection methods to choose from so have fun and enjoy your movie!
               </div>
             </div>
@@ -223,19 +218,7 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
                 localStorage.setItem('selectionGuideDismissed', 'true')
                 setShowSelectionGuide(false)
               }}
-              style={{
-                position: 'absolute',
-                top: 0,
-                right: 0,
-                background: 'rgba(0,229,255,0.28)',
-                color: '#00E5FF',
-                borderRadius: '999px',
-                padding: '6px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 6px 16px rgba(0,229,255,0.2)'
-              }}
+              className="absolute top-0 right-0 bg-accent/30 text-accent rounded-full p-1.5 inline-flex items-center justify-center shadow-lg shadow-accent/20"
               aria-label="Minimize selection guide"
               title="Dismiss"
             >
@@ -245,10 +228,10 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
         )}
 
         {/* CONTROLS */}
-        <div className="glass-panel" style={{ marginBottom: '20px' }}>
-            <div className="text-sm" style={{ marginBottom: '8px' }}>Selection Method</div>
-            <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
-                <select value={method} onChange={(e) => setMethod(e.target.value)} style={{ flex: 1, padding: '12px' }}>
+        <div className="bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-2xl p-4 mb-5">
+            <div className="text-sm mb-2">Selection Method</div>
+            <div className="flex gap-2.5 mb-4">
+                <select value={method} onChange={(e) => setMethod(e.target.value)} className="flex-1 p-3 bg-black/30 border border-white/10 text-white rounded-lg text-base">
                     <option value="score">Highest Score (Weighted)</option>
                     <option value="loved">Most Loved (Hearts)</option>
                     <option value="approval">Most Approved (No Dislikes)</option>
@@ -257,8 +240,8 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
                 </select>
             </div>
             
-            <div className="flex-between" style={{ padding: '12px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px' }}>
-                <span className="text-sm" style={{ lineHeight: '1.4' }}>Filter out Dislikes?</span>
+            <div className="flex justify-between items-center p-3 bg-white/5 rounded-lg">
+                <span className="text-sm leading-snug">Filter out Dislikes?</span>
                 <input className="toggle" type="checkbox" checked={ignoreDislikes} onChange={(e) => setIgnoreDislikes(e.target.checked)} />
             </div>
 
@@ -268,14 +251,14 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
                   disabled={!isReady}
                   whileTap={{ scale: 0.98 }}
                   whileHover={{ scale: 1.01 }}
-                  style={{ marginTop: '15px', background: isReady ? 'gold' : 'rgba(255,255,255,0.08)', color: isReady ? 'black' : '#94a3b8', width: '100%', padding: '15px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', cursor: isReady ? 'pointer' : 'not-allowed' }}
+                  className={`mt-4 w-full p-4 rounded-lg flex items-center justify-center gap-2.5 font-bold ${isReady ? 'bg-amber-400 text-black cursor-pointer' : 'bg-white/10 text-slate-400 cursor-not-allowed'}`}
                 >
                     <motion.span
                       key={spinTick}
                       initial={{ rotate: 0 }}
                       animate={{ rotate: 360 }}
                       transition={{ duration: 0.6, ease: 'easeInOut' }}
-                      style={{ display: 'flex' }}
+                      className="flex"
                     >
                       <Shuffle size={20}/>
                     </motion.span>
@@ -286,7 +269,7 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
                 <button
                   onClick={() => isReady && setRevealResults(true)}
                   disabled={!isReady}
-                  style={{ marginTop: '15px', background: isReady ? '#00E5FF' : 'rgba(255,255,255,0.08)', color: isReady ? 'black' : '#94a3b8', width: '100%', padding: '14px', borderRadius: '12px', fontWeight: 700, cursor: isReady ? 'pointer' : 'not-allowed' }}
+                  className={`mt-4 w-full p-3.5 rounded-lg font-bold ${isReady ? 'bg-accent text-black cursor-pointer' : 'bg-white/10 text-slate-400 cursor-not-allowed'}`}
                 >
                     Reveal Results
                 </button>
@@ -294,9 +277,9 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
         </div>
 
         {!loading && !hasNominations && (
-          <div className="glass-panel" style={{ marginBottom: '20px', textAlign: 'center' }}>
-            <div style={{ fontWeight: 700, marginBottom: '6px' }}>No nominations yet</div>
-            <div className="text-sm" style={{ color: '#9ca3af' }}>Add nominations to enable selection.</div>
+          <div className="bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-2xl p-4 mb-5 text-center">
+            <div className="font-bold mb-1.5">No nominations yet</div>
+            <div className="text-sm text-slate-400">Add nominations to enable selection.</div>
           </div>
         )}
 
@@ -307,17 +290,16 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
             initial={{ opacity: 0, y: 16, rotate: -1.5, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, rotate: 0, scale: 1 }}
             transition={{ type: 'spring', damping: 18, stiffness: 260 }}
-            className="glass-panel"
+            className="bg-slate-900/50 backdrop-blur-md border-l-4 border-amber-400 rounded-2xl p-4 mb-4 cursor-pointer"
             onClick={() => setActiveMovie(randomPick)}
-            style={{ marginBottom: '16px', borderLeft: '4px solid gold', cursor: 'pointer' }}
           >
-            <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>Tonight's Pick</div>
-            <div style={{ marginTop: '6px', fontSize: '1.3rem', fontWeight: 800, color: 'gold' }}>{randomPick.title}</div>
-            <div className="text-sm" style={{ marginTop: '4px' }}>Score: {randomPick.stats.score}</div>
+            <div className="font-bold text-lg">Tonight's Pick</div>
+            <div className="mt-1.5 text-xl font-extrabold text-amber-400">{randomPick.title}</div>
+            <div className="text-sm mt-1">Score: {randomPick.stats.score}</div>
             <button
               onClick={(e) => { e.stopPropagation(); selectNomination(randomPick.nomination_id, randomPick.movie_id) }}
               disabled={selectingId === randomPick.nomination_id}
-              style={{ marginTop: '12px', background: '#00E5FF', color: 'black', width: '100%', padding: '12px', borderRadius: '12px', fontWeight: 700 }}
+              className="mt-3 bg-accent text-black w-full p-3 rounded-lg font-bold"
             >
               {selectingId === randomPick.nomination_id ? 'Selecting...' : "Let's Watch This"}
             </button>
@@ -329,14 +311,13 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
             initial={{ opacity: 0, y: 16, rotate: -1.5, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, rotate: 0, scale: 1 }}
             transition={{ type: 'spring', damping: 18, stiffness: 260 }}
-            className="glass-panel"
-            style={{ marginBottom: '16px', borderLeft: '4px solid #00E5FF' }}
+            className="bg-slate-900/50 backdrop-blur-md border-l-4 border-accent rounded-2xl p-4 mb-4"
           >
-            <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>Tonight's Decider</div>
-            <div style={{ marginTop: '6px', fontSize: '1.3rem', fontWeight: 800, color: '#00E5FF' }}>
+            <div className="font-bold text-lg">Tonight's Decider</div>
+            <div className="mt-1.5 text-xl font-extrabold text-accent">
               {deciderPick.profiles?.display_name || deciderPick.profiles?.username || 'Movie Fan'}
             </div>
-            <div className="text-sm" style={{ marginTop: '6px', color: '#cbd5e1' }}>
+            <div className="text-sm text-slate-300 mt-1.5">
               Pick a movie from the list below.
             </div>
           </motion.div>
@@ -346,40 +327,30 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
             initial="hidden"
             animate="show"
             variants={{ show: { transition: { staggerChildren: 0.08 } } }}
-            style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
+            className="flex flex-col gap-3"
           >
             {sortedList.map((movie) => (
               <motion.div
                 key={`decider-${movie.nomination_id}`}
                 variants={{ hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } }}
-                className="glass-panel"
+                className="bg-slate-900/50 backdrop-blur-md border-l-4 border-transparent rounded-2xl p-4 flex items-center justify-between cursor-pointer"
                 onClick={() => setActiveMovie(movie)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '16px',
-                  borderRadius: '16px',
-                  background: 'rgba(255,255,255,0.03)',
-                  borderLeft: '4px solid transparent',
-                  cursor: 'pointer'
-                }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ fontWeight: 'bold', fontSize: '1.05rem' }}>{movie.title}</div>
+                <div className="flex items-center gap-3 flex-1">
+                  <div className="flex flex-col gap-2">
+                    <div className="font-bold text-base">{movie.title}</div>
                     <div className="text-sm">Score: {movie.stats.score}</div>
                     <button
                       onClick={(e) => { e.stopPropagation(); selectNomination(movie.nomination_id, movie.movie_id) }}
                       disabled={selectingId === movie.nomination_id}
-                      style={{ alignSelf: 'flex-start', background: 'rgba(0,229,255,0.2)', color: '#00E5FF', border: '1px solid rgba(0,229,255,0.5)', padding: '6px 10px', borderRadius: '999px', fontSize: '0.85rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}
+                      className="self-start bg-accent/20 text-accent border border-accent/50 px-2.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5"
                     >
                       <PlayCircle size={14} />
                       {selectingId === movie.nomination_id ? 'Selecting...' : "Let's Watch This"}
                     </button>
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: '12px' }}>
+                <div className="flex gap-3">
                   <Stat icon={Heart} val={movie.stats.hearts} color="#FF4D9A" />
                   <Stat icon={ThumbsUp} val={movie.stats.likes} color="#00E5FF" />
                   <Stat icon={ThumbsDown} val={movie.stats.dislikes} color="#FF4D6D" />
@@ -393,42 +364,37 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
             initial="hidden"
             animate="show"
             variants={{ show: { transition: { staggerChildren: 0.15 } } }}
-            style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
+            className="flex flex-col gap-3"
           >
               <motion.div
                 variants={{ hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } }}
-                className="text-sm"
-                style={{ marginBottom: '2px', letterSpacing: '0.08em', fontWeight: 700, color: '#cbd5e1' }}
+                className="text-sm mb-0.5 tracking-widest font-bold text-slate-300"
               >
                 RESULTS
               </motion.div>
               {sortedList.map((movie, index) => {
                 const place = index + 1
                 const medal = place === 1 ? 'gold' : place === 2 ? '#c0c0c0' : place === 3 ? '#cd7f32' : null
+                const posterUrl = movie.poster_path ? `${POSTER_BASE_URL}${movie.poster_path}` : null
                 return (
                   <motion.div
                     key={movie.nomination_id}
                     variants={{ hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } }}
-                    className="glass-panel"
+                    className={`bg-slate-900/50 backdrop-blur-md border rounded-2xl p-4 flex items-center justify-between cursor-pointer ${medal ? 'bg-white/5' : 'border-white/10'}`}
                     onClick={() => setActiveMovie(movie)}
-                    style={{ 
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '16px', borderRadius: '16px',
-                      background: medal ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.03)',
-                      borderLeft: medal ? `4px solid ${medal}` : '4px solid transparent',
-                      cursor: 'pointer'
-                    }}
+                    style={{ borderColor: medal || 'rgba(255,255,255,0.1)' }}
                   >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
-                        <span style={{ fontSize: '1.4rem', fontWeight: 'bold', color: medal || '#444' }}>#{place}</span>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                          <div style={{ fontWeight: 'bold', fontSize: '1.05rem' }}>{movie.title}</div>
+                      <div className="flex items-center gap-3 flex-1">
+                        <span className="text-xl font-bold" style={{ color: medal || '#444' }}>#{place}</span>
+                        {posterUrl && <img src={posterUrl} alt={movie.title} className="w-10 h-14 object-cover rounded-md bg-slate-800" />}
+                        <div className="flex flex-col gap-2">
+                          <div className="font-bold text-base">{movie.title}</div>
                           <div className="text-sm">Score: {movie.stats.score}</div>
                           {place <= topCount && (
                             <button
                               onClick={(e) => { e.stopPropagation(); selectNomination(movie.nomination_id, movie.movie_id) }}
                               disabled={selectingId === movie.nomination_id}
-                              style={{ alignSelf: 'flex-start', background: 'rgba(0,229,255,0.2)', color: '#00E5FF', border: '1px solid rgba(0,229,255,0.5)', padding: '6px 10px', borderRadius: '999px', fontSize: '0.85rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}
+                              className="self-start bg-accent/20 text-accent border border-accent/50 px-2.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5"
                             >
                               <PlayCircle size={14} />
                               {selectingId === movie.nomination_id ? 'Selecting...' : "Let's Watch This"}
@@ -437,7 +403,7 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
                         </div>
                       </div>
 
-                      <div style={{ display: 'flex', gap: '12px' }}>
+                      <div className="flex gap-3">
                         <Stat icon={Heart} val={movie.stats.hearts} color="#FF4D9A" />
                         <Stat icon={ThumbsUp} val={movie.stats.likes} color="#00E5FF" />
                         <Stat icon={ThumbsDown} val={movie.stats.dislikes} color="#FF4D6D" />
@@ -448,7 +414,7 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
           </motion.div>
         )}
         {!revealResults && !isRoulette && (
-          <div className="text-sm" style={{ textAlign: 'center', color: '#888' }}>
+          <div className="text-sm text-center text-slate-500">
             Ready to reveal? Tap the button above.
           </div>
         )}
@@ -459,53 +425,53 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              style={{ position: 'fixed', inset: 0, zIndex: 3100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)' }}
+              className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-md"
             >
               <motion.div
                 initial={{ y: '100%' }}
                 animate={{ y: 0 }}
                 exit={{ y: '100%' }}
                 transition={{ type: 'spring', damping: 26, stiffness: 260 }}
-                style={{ width: '100%', maxWidth: '520px', height: '70vh', background: '#1a1a2e', borderTopLeftRadius: '24px', borderTopRightRadius: '24px', padding: '20px', display: 'flex', flexDirection: 'column' }}
+                className="w-full max-w-lg h-[70vh] bg-slate-900 border-t border-white/10 rounded-t-3xl p-5 flex flex-col"
               >
-                <div className="flex-between" style={{ marginBottom: '16px' }}>
-                  <div>
-                    <h2 style={{ margin: 0 }}>{activeMovie.title}</h2>
-                    <div className="text-sm" style={{ marginTop: '4px' }}>{activeMovie.genre?.join(', ') || 'Genre N/A'}</div>
+                {(() => {
+                  const posterUrl = activeMovie.poster_path ? `${POSTER_BASE_URL}${activeMovie.poster_path}` : null
+                  return (
+                <div className="flex justify-between items-start gap-4 mb-4">
+                  <div className="flex gap-4 items-start">
+                    {posterUrl && <img src={posterUrl} alt={activeMovie.title} className="w-20 rounded-lg" />}
+                    <div>
+                    <h2 className="m-0 text-xl font-bold">{activeMovie.title}</h2>
+                    <div className="text-sm mt-1 text-slate-400">{activeMovie.genre?.join(', ') || 'Genre N/A'}</div>
                   </div>
-                  <button onClick={() => setActiveMovie(null)} style={{ background: '#333', padding: '8px', borderRadius: '50%', color: 'white', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>X</button>
+                  </div>
+                  <button onClick={() => setActiveMovie(null)} className="bg-slate-700 p-2 rounded-full text-white w-9 h-9 flex items-center justify-center">X</button>
                 </div>
+                  )
+                })()}
 
-                <div style={{ marginBottom: '12px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                <div className="mb-3 flex gap-2.5 flex-wrap">
                   {(() => {
                     const score = activeMovie.rt_score || '-'
-                    const scoreColor = activeMovie.rt_score >= 80 ? '#4ade80' : activeMovie.rt_score >= 60 ? '#facc15' : '#94a3b8'
+                    const scoreColor = activeMovie.rt_score >= 80 ? 'text-green-400 border-green-400' : activeMovie.rt_score >= 60 ? 'text-yellow-400 border-yellow-400' : 'text-slate-400 border-slate-400'
                     return (
-                      <span style={{ 
-                        background: 'rgba(0,0,0,0.3)',
-                        padding: '6px 10px',
-                        borderRadius: '10px',
-                        border: `1px solid ${scoreColor}`,
-                        color: scoreColor,
-                        fontSize: '0.85rem',
-                        fontWeight: 700
-                      }}>
+                      <span className={`bg-black/30 px-2.5 py-1.5 rounded-lg border text-xs font-bold ${scoreColor}`}>
                         {score === '-' ? '-' : `🍅 ${score}%`}
                       </span>
                     )
                   })()}
                 </div>
 
-                <div style={{ marginBottom: '16px', overflowY: 'auto' }}>
+                <div className="mb-4 overflow-y-auto">
                   {renderTheaterDetails(activeMovie)}
                   {activeMovie.description?.trim() && (
-                    <p style={{ marginTop: 0, lineHeight: 1.5, color: '#cbd5e1' }}>
+                    <p className="mt-0 leading-relaxed text-slate-300">
                       {activeMovie.description.trim()}
                     </p>
                   )}
 
-                  <div className="glass-panel" style={{ padding: '14px', background: 'rgba(255,255,255,0.04)' }}>
-                    <div style={{ fontWeight: 700, marginBottom: '10px' }}>Votes by reaction</div>
+                  <div className="bg-white/5 rounded-2xl p-4">
+                    <div className="font-bold mb-2.5">Votes by reaction</div>
                     <VoteBreakdown movie={activeMovie} />
                   </div>
                 </div>
@@ -520,9 +486,9 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
 
 function Stat({ icon: Icon, val, color }) {
     return (
-        <div style={{ textAlign: 'center' }}>
-            <Icon size={16} color={color} />
-            <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: color }}>{val}</div>
+        <div className="text-center">
+            <Icon size={16} style={{ color }} />
+            <div className="text-sm font-bold" style={{ color }}>{val}</div>
         </div>
     )
 }
@@ -546,7 +512,7 @@ function renderTheaterDetails(entry) {
   if (entry.theater_notes) details.push(entry.theater_notes)
   if (details.length === 0) return null
   return (
-    <div className="text-sm" style={{ color: '#fef3c7', marginBottom: '10px' }}>
+    <div className="text-sm text-amber-200 mb-2.5">
       {details.join(' | ')}
     </div>
   )
@@ -566,14 +532,14 @@ function VoteBreakdown({ movie }) {
   })
 
   const renderGroup = (label, items, color) => (
-    <div style={{ marginBottom: '10px' }}>
-      <div style={{ fontWeight: 600, marginBottom: '6px', color }}>{label}</div>
+    <div className="mb-2.5">
+      <div className="font-semibold mb-1.5" style={{ color }}>{label}</div>
       {items.length === 0 ? (
         <div className="text-sm">No votes yet.</div>
       ) : (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+        <div className="flex flex-wrap gap-2">
           {items.map((name, idx) => (
-            <span key={`${label}-${idx}`} style={{ background: 'rgba(255,255,255,0.06)', padding: '4px 8px', borderRadius: '999px', fontSize: '0.8rem' }}>
+            <span key={`${label}-${idx}`} className="bg-white/10 px-2 py-1 rounded-full text-xs">
               {name}
             </span>
           ))}

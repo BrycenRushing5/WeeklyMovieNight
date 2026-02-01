@@ -1,40 +1,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
 
-:root {
-  --bg-gradient: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-  --glass-bg: rgba(255, 255, 255, 0.05);
-  --glass-border: 1px solid rgba(255, 255, 255, 0.1);
-  --primary: #FF0055; /* Neon Pink */
-  --accent: #00E5FF; /* Cyan */
-  --text: #ffffff;
-  --text-muted: #94a3b8;
-  --radius: 16px;
-}
-
-h1, h2, h3, h4, h5, h6 {
-  color: white !important; /* Force white text */
-  margin-top: 0;
-}
-
-.gradient-text {
-  /* Only use this on the Main Logo, not normal headers */
-  background: linear-gradient(to right, #FF0055, #FF5500);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-/* THEATER CARD STYLE */
-.theater-card {
-  border: 1px solid #ffd700;
-  background: rgba(255, 215, 0, 0.05); /* Very subtle gold tint */
-}
-
-/* MAPS LINK */
-.maps-link {
-  color: #00E5FF;
-  text-decoration: underline;
-  cursor: pointer;
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 html, body {
   height: 100%;
@@ -43,8 +11,6 @@ html, body {
 body {
   margin: 0;
   font-family: 'Inter', sans-serif;
-  background: var(--bg-gradient);
-  color: var(--text);
   min-height: 100svh;
   -webkit-font-smoothing: antialiased;
 }
@@ -104,10 +70,11 @@ body {
 }
 
 .loading-logo {
-  width: var(--spinner-size, 72px);
-  height: var(--spinner-size, 72px);
+  --spinner-size: 72px;
+  width: var(--spinner-size);
+  height: var(--spinner-size);
   border-radius: 50%;
-  background: conic-gradient(from 0deg, var(--primary), var(--accent), var(--primary));
+  background: conic-gradient(from 0deg, #FF0055, #00E5FF, #FF0055);
   position: relative;
   display: flex;
   align-items: center;
@@ -121,7 +88,7 @@ body {
   position: absolute;
   inset: 6px;
   border-radius: 50%;
-  background: var(--bg-gradient);
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
   box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.45);
 }
 
@@ -136,7 +103,7 @@ body {
 
 .loading-text {
   font-size: 0.95rem;
-  color: var(--text-muted);
+  color: #94a3b8;
 }
 
 @keyframes neon-spin {
@@ -151,143 +118,6 @@ body {
   }
 }
 
-/* THE "GLASS" CARD LOOK */
-.glass-panel {
-  background: var(--glass-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: var(--glass-border);
-  border-radius: var(--radius);
-  padding: 20px;
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-}
-
-input, select, textarea {
-  width: 100%;
-  background: rgba(0,0,0,0.3);
-  border: 1px solid rgba(255,255,255,0.1);
-  color: white;
-  font-family: inherit;
-  padding: 14px;
-  border-radius: 12px;
-  font-size: 16px;
-  outline: none;
-  transition: border-color 0.2s;
-  box-sizing: border-box;
-}
-
-button {
-  font-family: inherit;
-}
-
-input:focus {
-  border-color: var(--accent);
-}
-
-input.toggle {
-  appearance: none;
-  width: 46px;
-  height: 26px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.12);
-  border: 1px solid rgba(255,255,255,0.2);
-  position: relative;
-  transition: background 0.2s, border-color 0.2s;
-  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.25);
-}
-
-input.toggle::after {
-  content: '';
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: #f8fafc;
-  transition: transform 0.2s, background 0.2s;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.35);
-}
-
-input.toggle:checked {
-  background: rgba(0,229,255,0.35);
-  border-color: rgba(0,229,255,0.7);
-}
-
-input.toggle:checked::after {
-  transform: translateX(20px);
-  background: #e6fbff;
-}
-
-input.toggle:focus-visible {
-  outline: 2px solid rgba(0,229,255,0.6);
-  outline-offset: 2px;
-}
-
-input[type="range"] {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 100%;
-  height: 8px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.12);
-  border: 1px solid rgba(255,255,255,0.16);
-  outline: none;
-}
-
-input[type="range"]::-webkit-slider-runnable-track {
-  height: 8px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #ff4d4d, #f59e0b, #22c55e);
-}
-
-input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 22px;
-  height: 22px;
-  margin-top: -8px;
-  border-radius: 50%;
-  background: #e6fbff;
-  border: 2px solid rgba(0,229,255,0.8);
-  box-shadow: 0 6px 12px rgba(0,0,0,0.35);
-}
-
-input[type="range"]::-moz-range-track {
-  height: 8px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #ff4d4d, #f59e0b, #22c55e);
-}
-
-input[type="range"]::-moz-range-thumb {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: #e6fbff;
-  border: 2px solid rgba(0,229,255,0.8);
-  box-shadow: 0 6px 12px rgba(0,0,0,0.35);
-}
-
-input[type="range"]:focus-visible {
-  outline: 2px solid rgba(0,229,255,0.6);
-  outline-offset: 3px;
-}
-
-button {
-  cursor: pointer;
-  border: none;
-  font-weight: 600;
-  transition: transform 0.1s;
-}
-
-button:active {
-  transform: scale(0.96); /* Satisfying click feel */
-}
-
-/* UTILITIES */
-.flex-between { display: flex; justify-content: space-between; align-items: center; }
-.flex-gap { display: flex; gap: 10px; }
-.text-sm { font-size: 0.85rem; color: var(--text-muted); }
 .gradient-text {
   background: linear-gradient(to right, #FF0055, #FF5500);
   -webkit-background-clip: text;

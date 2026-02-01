@@ -2,8 +2,9 @@ import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion' 
 import { X, Search, Filter, Book, Ticket, Users, ChevronDown, ChevronUp, Minus, Plus, Check } from 'lucide-react' 
 import { supabase } from './supabaseClient'
+import { POSTER_BASE_URL } from './tmdbClient'
 
-const DEFAULT_GENRES = ['Action', 'Comedy', 'Drama', 'Fantasy', 'Horror', 'Romance', 'Sci-Fi', 'Thriller', 'Family']
+const DEFAULT_GENRES = ['Action', 'Adventure', 'Comedy', 'Documentary', 'Holiday', 'Horror', 'Romance', 'Sci-Fi', 'Mystery & thriller', 'Fantasy']
 const COMMON_GENRES = ['Action', 'Adventure', 'Comedy', 'Documentary', 'Holiday', 'Horror', 'Romance', 'Sci-Fi', 'Mystery & thriller', 'Fantasy']
 
 export default function SearchMovies({ eventId, groupId, onClose, onNominate, customAction, customRemoveAction }) {
@@ -400,25 +401,14 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
   const filteredMyWatchlist = applyFilters(myWatchlist)
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(5px)' }}>
-      <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: "spring", damping: 25, stiffness: 300 }} style={{ width: '100%', maxWidth: '500px', height: '85svh', background: '#1a1a2e', borderTopLeftRadius: '24px', borderTopRightRadius: '24px', padding: '20px', paddingTop: 'max(20px, env(safe-area-inset-top))', display: 'flex', flexDirection: 'column', boxShadow: '0 -10px 40px rgba(0,0,0,0.5)' }}>
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 backdrop-blur-sm">
+      <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: "spring", damping: 25, stiffness: 300 }} className="w-full max-w-lg h-[85svh] bg-slate-900 border-t border-white/10 rounded-t-3xl p-5 pt-[max(20px,env(safe-area-inset-top))] flex flex-col shadow-2xl">
         
-        <div className="flex-between" style={{ marginBottom: '20px' }}>
-          <h2 style={{ margin: 0 }}>{isEventMode ? 'Nominate' : 'Add to Watchlist'}</h2>
+        <div className="flex justify-between items-center mb-5">
+          <h2 className="m-0 text-xl font-bold">{isEventMode ? 'Nominate' : 'Add to Watchlist'}</h2>
           <button
             onClick={onClose}
-            style={{
-              background: '#333',
-              width: '36px',
-              height: '36px',
-              padding: 0,
-              borderRadius: '999px',
-              color: 'white',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0
-            }}
+            className="bg-slate-700 w-9 h-9 p-0 rounded-full text-white inline-flex items-center justify-center shrink-0"
           >
             <X size={20} />
           </button>
@@ -426,7 +416,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
 
         {/* TABS */}
         {isEventMode && (
-          <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', overflowX: 'auto', paddingBottom: '5px', justifyContent: 'center' }}>
+          <div className="flex gap-2.5 mb-4 overflow-x-auto pb-1.5 justify-center">
               <TabButton active={activeTab === 'search'} onClick={() => {setActiveTab('search'); setIsWritingIn(false)}}><Search size={16}/> Search</TabButton>
               <TabButton active={activeTab === 'watchlist'} onClick={() => { setActiveTab('watchlist'); setIsWritingIn(false) }}><Book size={16}/> Watchlist</TabButton>
               <TabButton active={activeTab === 'theater'} onClick={() => { setActiveTab('theater'); setIsWritingIn(false) }}><Ticket size={16}/> Theatre</TabButton>
@@ -434,20 +424,14 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
         )}
 
         {isEventMode && showNominationGuide && (
-          <div style={{ position: 'relative', marginBottom: '14px', paddingTop: '8px', paddingRight: '12px' }}>
+          <div className="relative mb-3.5 pt-2 pr-3">
             <div
-              style={{
-                padding: '14px',
-                borderRadius: '14px',
-                border: '1px dashed rgba(0,229,255,0.35)',
-                background: 'rgba(0,229,255,0.06)',
-                textAlign: 'center'
-              }}
+              className="p-3.5 rounded-2xl border-dashed border border-accent/40 bg-accent/10 text-center"
             >
-              <div style={{ fontWeight: 700, marginBottom: '6px', color: '#e2e8f0' }}>
+              <div className="font-bold mb-1.5 text-slate-200">
                 Welcome to nominations!
               </div>
-              <div className="text-sm" style={{ color: '#cbd5e1' }}>
+              <div className="text-sm text-slate-300">
                 You have 3 different ways to nominate movies. You can search for the movie, check out what is on you or your friends watchlists, or suggest going to a theater! Once options are nominated, users can vote for the movies they want
               </div>
             </div>
@@ -457,19 +441,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                 localStorage.setItem('nominationGuideDismissed', 'true')
                 setShowNominationGuide(false)
               }}
-              style={{
-                position: 'absolute',
-                top: 0,
-                right: 0,
-                background: 'rgba(0,229,255,0.28)',
-                color: '#00E5FF',
-                borderRadius: '999px',
-                padding: '6px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 6px 16px rgba(0,229,255,0.2)'
-              }}
+              className="absolute top-0 right-0 bg-accent/30 text-accent rounded-full p-1.5 inline-flex items-center justify-center shadow-lg shadow-accent/20"
               aria-label="Minimize nominations guide"
               title="Dismiss"
             >
@@ -480,10 +452,10 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
 
         {/* FILTERS (Shared across lists) */}
         {activeTab !== 'theater' && !isWritingIn && (
-            <div style={{ marginBottom: '15px', padding: '10px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px' }}>
-                <form className="flex-between" onSubmit={handleSearchSubmit}>
-                    <div style={{display:'flex', gap:'10px', alignItems:'center', flex: 1}}>
-                        <Search size={16} color="#888"/>
+            <div className="mb-4 p-2.5 bg-white/5 rounded-lg">
+                <form className="flex justify-between items-center" onSubmit={handleSearchSubmit}>
+                    <div className="flex gap-2.5 items-center flex-1">
+                        <Search size={16} className="text-slate-400"/>
                         <input
                           ref={searchInputRef}
                           type="text"
@@ -491,7 +463,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                           placeholder="Search for movie..."
                           value={searchTerm}
                           onChange={(e) => setSearchTerm(e.target.value)}
-                          style={{background:'transparent', border:'none', padding:0, height:'auto', width: '100%'}}
+                          className="bg-transparent border-none p-0 h-auto w-full text-white"
                         />
                         {searchTerm && (
                           <button
@@ -500,34 +472,26 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                               setSearchTerm('')
                               searchInputRef.current?.focus()
                             }}
-                            style={{ background: 'rgba(255,255,255,0.08)', border: 'none', color: '#cbd5e1', padding: '4px', borderRadius: '999px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                            className="bg-white/10 border-none text-slate-300 p-1 rounded-full inline-flex items-center justify-center"
                             aria-label="Clear search"
                           >
                             <X size={14} />
                           </button>
                         )}
                     </div>
-                    <button type="button" onClick={() => setShowFilters(!showFilters)} style={{ background: 'none', padding: '4px', marginLeft: '6px', display: 'inline-flex', alignItems: 'center' }}>
-                      <Filter size={16} color={showFilters ? '#00E5FF' : '#666'} />
+                    <button type="button" onClick={() => setShowFilters(!showFilters)} className="bg-none p-1 ml-1.5 inline-flex items-center">
+                      <Filter size={16} className={showFilters ? 'text-accent' : 'text-slate-500'} />
                     </button>
                 </form>
                 {showFilters && (
-                    <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #333' }}>
-                         <div style={{ marginBottom: '10px' }}>
-                            <div className="flex-gap" style={{ flexWrap: 'wrap' }}>
+                    <div className="mt-2.5 pt-2.5 border-t border-white/10">
+                         <div className="mb-2.5">
+                            <div className="flex gap-1.5 flex-wrap">
                               {visibleGenres.map(g => (
                                 <button
                                   key={g}
                                   onClick={() => toggleGenreFilter(g)}
-                                  style={{
-                                    padding: '6px 10px',
-                                    borderRadius: '999px',
-                                    border: '1px solid #333',
-                                    background: genreFilters.includes(g) ? '#00E5FF' : 'rgba(255,255,255,0.08)',
-                                    color: genreFilters.includes(g) ? 'black' : 'white',
-                                    fontSize: '0.75rem',
-                                    fontWeight: 600
-                                  }}
+                                  className={`px-2.5 py-1.5 rounded-full border text-xs font-semibold ${genreFilters.includes(g) ? 'bg-accent text-black border-transparent' : 'bg-white/10 border-white/10'}`}
                                 >
                                   {g}
                                 </button>
@@ -536,37 +500,18 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                             {genres.length > 8 && (
                               <button
                                 onClick={() => setShowAllGenres(prev => !prev)}
-                                style={{
-                                  marginTop: '8px',
-                                  background: 'transparent',
-                                  border: 'none',
-                                  color: '#9ca3af',
-                                  fontSize: '0.75rem',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '6px'
-                                }}
+                                className="mt-2 bg-transparent border-none text-slate-400 text-xs flex items-center gap-1.5"
                               >
                                 {showAllGenres ? 'See less' : 'See more'} {showAllGenres ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                               </button>
                             )}
                             {genreFilters.length > 0 && (
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+                              <div className="flex flex-wrap gap-1.5 mt-2">
                                 {genreFilters.map(g => (
                                   <button
                                     key={g}
                                     onClick={() => toggleGenreFilter(g)}
-                                    style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '6px',
-                                      padding: '4px 8px',
-                                      borderRadius: '999px',
-                                      border: '1px solid rgba(0,229,255,0.4)',
-                                      background: 'rgba(0,229,255,0.12)',
-                                      color: '#00E5FF',
-                                      fontSize: '0.75rem'
-                                    }}
+                                    className="flex items-center gap-1.5 px-2 py-1 rounded-full border border-accent/40 bg-accent/20 text-accent text-xs"
                                   >
                                     {g}
                                     <X size={12} />
@@ -574,21 +519,21 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                                 ))}
                                 <button
                                   onClick={clearGenreFilters}
-                                  style={{ padding: '4px 8px', borderRadius: '999px', border: '1px solid #333', background: 'transparent', color: '#9ca3af', fontSize: '0.75rem' }}
+                                  className="px-2 py-1 rounded-full border border-white/20 bg-transparent text-slate-400 text-xs"
                                 >
                                   Clear
                                 </button>
                               </div>
                             )}
                          </div>
-                         <div className="flex-between">
+                         <div className="flex justify-between items-center">
                             <span className="text-sm">Minimum Rotten Tomato Score</span>
                             <input className="toggle" type="checkbox" checked={useScoreFilter} onChange={(e) => setUseScoreFilter(e.target.checked)} />
                          </div>
                          {useScoreFilter && (
-                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                             <input type="range" value={minScore} onChange={(e) => setMinScore(Number(e.target.value))} style={{ flex: 1 }} />
-                             <span className="text-sm" style={{ minWidth: '48px', textAlign: 'right' }}>{minScore}%</span>
+                           <div className="flex items-center gap-2.5">
+                             <input type="range" value={minScore} onChange={(e) => setMinScore(Number(e.target.value))} className="flex-1" />
+                             <span className="text-sm min-w-[48px] text-right">{minScore}%</span>
                            </div>
                          )}
                     </div>
@@ -598,28 +543,28 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
 
         {/* WATCHLIST SUB-TABS */}
         {activeTab === 'watchlist' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '12px' }}>
-            <div style={{ display: 'flex', gap: '10px' }}>
+          <div className="flex flex-col gap-2.5 mb-3">
+            <div className="flex gap-2.5">
               <button
                 onClick={() => setWatchlistScope('mine')}
-                style={{ flex: 1, padding: '10px', borderRadius: '12px', background: watchlistScope === 'mine' ? '#00E5FF' : 'rgba(255,255,255,0.1)', color: watchlistScope === 'mine' ? 'black' : 'white', fontWeight: 700 }}
+                className={`flex-1 p-2.5 rounded-lg font-bold ${watchlistScope === 'mine' ? 'bg-accent text-black' : 'bg-white/10 text-white'}`}
               >
                 My Watchlist
               </button>
               <button
                 onClick={() => setWatchlistScope('crew')}
-                style={{ flex: 1, padding: '10px', borderRadius: '12px', background: watchlistScope === 'crew' ? '#00E5FF' : 'rgba(255,255,255,0.1)', color: watchlistScope === 'crew' ? 'black' : 'white', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                className={`flex-1 p-2.5 rounded-lg font-bold flex items-center justify-center gap-1.5 ${watchlistScope === 'crew' ? 'bg-accent text-black' : 'bg-white/10 text-white'}`}
               >
                 <Users size={16} /> Crew's Watchlist
               </button>
             </div>
             {watchlistScope === 'crew' && (
-              <div className="flex-between" style={{ background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '12px', gap: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div className="flex justify-between items-center bg-white/5 p-2 rounded-lg gap-3">
+                <div className="flex items-center gap-1.5">
                   <input className="toggle" type="checkbox" checked={crewOnlyMine} onChange={(e) => setCrewOnlyMine(e.target.checked)} />
                   <span className="text-sm">Only include my watchlist</span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div className="flex items-center gap-1.5">
                   <input className="toggle" type="checkbox" checked={crewExcludeMe} onChange={(e) => setCrewExcludeMe(e.target.checked)} />
                   <span className="text-sm">Exclude me</span>
                 </div>
@@ -629,7 +574,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
         )}
 
         {/* LIST RENDERING */}
-        <div style={{ flex: 1, overflowY: 'auto', paddingRight: '12px', scrollbarGutter: 'stable' }}>
+        <div className="flex-1 overflow-y-auto pr-3" style={{ scrollbarGutter: 'stable' }}>
             {activeTab === 'search' && !isWritingIn && results.map(m => (
               <MovieRow
                 key={m.id}
@@ -642,13 +587,13 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
             ))}
             {activeTab === 'watchlist' && watchlistScope === 'mine' && filteredMyWatchlist.map(m => <MovieRow key={m.id} movie={m} onSelect={() => handleSelect(m)} />)}
             {activeTab === 'watchlist' && watchlistScope === 'crew' && crewGroups.map(group => (
-              <div key={group.count} style={{ marginBottom: '16px' }}>
+              <div key={group.count} className="mb-4">
                 <button
                   onClick={() => setCollapsedCrewGroups(prev => ({ ...prev, [group.count]: !prev[group.count] }))}
-                  style={{ width: '100%', background: 'none', border: 'none', color: '#00E5FF', marginBottom: '10px', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                  className="w-full bg-none border-none text-accent mb-2.5 p-0 cursor-pointer flex items-center gap-2"
                 >
                   {collapsedCrewGroups[group.count] ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
-                  <span className="text-sm" style={{ letterSpacing: '1px' }}>
+                  <span className="text-sm tracking-wider">
                     In {group.count} member{group.count === 1 ? '' : 's'} watchlists
                   </span>
                 </button>
@@ -660,76 +605,67 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
             
             {/* Empty States */}
             {activeTab === 'watchlist' && watchlistScope === 'crew' && filteredCrewEntries.length === 0 && (
-              <p className="text-sm" style={{textAlign:'center'}}>
+              <p className="text-sm text-center">
                 {crewOnlyMine ? 'Nothing from your watchlist yet.' : 'No watchlists found for this event.'}
               </p>
             )}
             
             {/* Write In Form */}
             {isWritingIn && (
-                 <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                    <div className="flex-gap" style={{ alignItems: 'center' }}>
+                 <div className="flex flex-col gap-4">
+                    <div className="flex items-center gap-2.5">
                       <input
                         placeholder="Movie Title"
                         value={newTitle || searchTerm}
                         onChange={(e) => setNewTitle(e.target.value)}
-                        style={{ flex: 1, minWidth: 0 }}
+                        className="flex-1 min-w-0 bg-black/30 border border-white/10 text-white p-3.5 rounded-lg text-base"
                       />
-                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'rgba(0,0,0,0.3)', borderRadius: '8px', padding: '4px 8px', border: `1px solid ${writeInScoreColor}`, color: writeInScoreColor, height: '32px' }}>
-                        <span role="img" aria-label="tomato" style={{ fontSize: '1.1rem' }}>🍅</span>
+                      <div className={`inline-flex items-center gap-1 bg-black/30 rounded-lg p-1 border ${writeInScoreColor}`} style={{ color: writeInScoreColor, borderColor: writeInScoreColor }}>
+                        <span role="img" aria-label="tomato" className="text-lg">🍅</span>
                         <input
                           type="text"
                           inputMode="numeric"
                           pattern="[0-9]*"
                           value={newScore}
                           onChange={(e) => setNewScore(e.target.value.replace(/[^0-9]/g, ''))}
-                          style={{ width: '24px', background: 'transparent', border: 'none', color: writeInScoreColor, textAlign: 'center', padding: 0 }}
+                          className="w-6 bg-transparent border-none text-center p-0"
+                          style={{ color: writeInScoreColor }}
                         />
-                        <span style={{ fontWeight: 700 }}>%</span>
+                        <span className="font-bold">%</span>
                       </div>
                     </div>
                     <textarea
                       placeholder="Write a description for the movie here!"
                       value={newDescription}
                       onChange={(e) => setNewDescription(e.target.value)}
-                      style={{ minHeight: '90px', resize: 'none' }}
+                      className="min-h-[90px] resize-none bg-black/30 border border-white/10 text-white p-3.5 rounded-lg text-base"
                     />
                     {writeInError && (
-                      <div className="glass-panel" style={{ border: '1px solid rgba(255,0,85,0.35)', background: 'rgba(255,0,85,0.12)', color: '#ffd1dc', textAlign: 'center' }}>
+                      <div className="border border-red-500/40 bg-red-500/10 text-red-300 text-center p-3 rounded-lg">
                         {writeInError}
                       </div>
                     )}
-                    <div className="flex-gap" style={{ alignItems: 'flex-start' }}>
-                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        <div className="text-sm" style={{ color: '#9ca3af' }}>Add what genres you think it hits!</div>
-                        <div className="flex-gap">
-                          <select value={newGenreOption} onChange={(e) => setNewGenreOption(e.target.value)} style={{ flex: 1, height: '52px', paddingRight: '64px' }}>
+                    <div className="flex items-start gap-2.5">
+                      <div className="flex-1 flex flex-col gap-2.5">
+                        <div className="text-sm text-slate-400">Add what genres you think it hits!</div>
+                        <div className="flex gap-2.5">
+                          <select value={newGenreOption} onChange={(e) => setNewGenreOption(e.target.value)} className="flex-1 h-14 pr-16 bg-black/30 border border-white/10 text-white p-3.5 rounded-lg text-base">
                             {genres.map(g => <option key={g} value={g}>{g}</option>)}
                           </select>
                           <button
                             onClick={() => setNewGenres(prev => prev.includes(newGenreOption) ? prev : [...prev, newGenreOption])}
-                            style={{ height: '36px', alignSelf: 'center', padding: '0 12px', borderRadius: '10px', background: 'rgba(255,255,255,0.1)', color: 'white', fontWeight: 700 }}
+                            className="self-center px-3 h-9 rounded-lg bg-white/10 text-white font-bold"
                           >
                             Add
                           </button>
                         </div>
                         {newGenres.length > 0 && (
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                          <div className="flex flex-wrap gap-2">
                             {newGenres.map(g => (
                               <button
                                 key={g}
                                 onClick={() => setNewGenres(prev => prev.filter(item => item !== g))}
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '6px',
-                                  padding: '6px 10px',
-                                  borderRadius: '999px',
-                                  border: '1px solid rgba(0,229,255,0.4)',
-                                  background: 'rgba(0,229,255,0.12)',
-                                  color: '#00E5FF',
-                                  fontSize: '0.75rem'
-                                }}
+                                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-accent/40 bg-accent/20 text-accent text-xs"
                               >
                                 {g}
                                 <X size={12} />
@@ -739,25 +675,25 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                         )}
                       </div>
                     </div>
-                    <button onClick={() => handleWriteIn()} style={{ background: '#00E5FF', color: 'black', padding: '15px', borderRadius: '12px' }}>Save & Select</button>
-                    <button onClick={() => { setIsWritingIn(false); setActiveTab('search') }} className="text-sm" style={{background:'none'}}>Cancel</button>
+                    <button onClick={() => handleWriteIn()} className="bg-accent text-black p-4 rounded-lg font-bold">Save & Select</button>
+                    <button onClick={() => { setIsWritingIn(false); setActiveTab('search') }} className="text-sm bg-transparent">Cancel</button>
                  </div>
             )}
 
             {/* Theater Form */}
             {activeTab === 'theater' && (
-                <div style={{ textAlign: 'center', marginTop: '20px' }}>
-                    <Ticket size={48} color="gold" style={{marginBottom:'10px'}}/>
-                    <h3 style={{color:'gold'}}>Let's Go Out</h3>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '20px' }}>
-                      <input placeholder="Theater (Optional)" value={theaterName} onChange={(e) => setTheaterName(e.target.value)} />
-                      <textarea placeholder="Trip Notes (Optional)" value={theaterNotes} onChange={(e) => setTheaterNotes(e.target.value)} style={{ minHeight: '90px', resize: 'none' }} />
+                <div className="text-center mt-5">
+                    <Ticket size={48} className="text-amber-400 mb-2.5 mx-auto"/>
+                    <h3 className="text-amber-400 font-bold">Let's Go Out</h3>
+                    <div className="flex flex-col gap-2.5 mt-5">
+                      <input placeholder="Theater (Optional)" value={theaterName} onChange={(e) => setTheaterName(e.target.value)} className="w-full bg-black/30 border border-white/10 text-white p-3.5 rounded-lg text-base" />
+                      <textarea placeholder="Trip Notes (Optional)" value={theaterNotes} onChange={(e) => setTheaterNotes(e.target.value)} className="min-h-[90px] resize-none bg-black/30 border border-white/10 text-white p-3.5 rounded-lg text-base" />
                     </div>
 
-                    <div style={{ marginTop: '18px', textAlign: 'left' }}>
-                      <div className="text-sm" style={{ color: '#9ca3af', marginBottom: '8px' }}>Search for your movie</div>
-                      <form onSubmit={handleTheaterSearchSubmit} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.08)', padding: '8px 10px', borderRadius: '12px' }}>
-                        <Search size={16} color="#9ca3af" />
+                    <div className="mt-4 text-left">
+                      <div className="text-sm text-slate-400 mb-2">Search for your movie</div>
+                      <form onSubmit={handleTheaterSearchSubmit} className="flex items-center gap-2 bg-white/10 p-2 rounded-lg">
+                        <Search size={16} className="text-slate-400" />
                         <input
                           ref={theaterSearchInputRef}
                           type="text"
@@ -765,7 +701,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                           placeholder="Search movies..."
                           value={theaterSearchTerm}
                           onChange={(e) => setTheaterSearchTerm(e.target.value)}
-                          style={{ background: 'transparent', border: 'none', color: 'white', width: '100%' }}
+                          className="bg-transparent border-none text-white w-full"
                         />
                         {theaterSearchTerm && (
                           <button
@@ -775,7 +711,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                               setTheaterResults([])
                               theaterSearchInputRef.current?.focus()
                             }}
-                            style={{ background: 'transparent', border: 'none', color: '#9ca3af', padding: 0 }}
+                            className="bg-transparent border-none text-slate-400 p-0"
                             aria-label="Clear search"
                           >
                             <X size={14} />
@@ -783,7 +719,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                         )}
                       </form>
                       {theaterResults.length > 0 && (
-                        <div style={{ marginTop: '12px' }}>
+                        <div className="mt-3">
                           {theaterResults.map(m => (
                             <MovieRow
                               key={m.id}
@@ -800,19 +736,19 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                         </div>
                       )}
                       {theaterSelectedMovie && (
-                        <div className="glass-panel" style={{ marginTop: '12px', padding: '12px', borderRadius: '12px', textAlign: 'left' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'center' }}>
-                            <div style={{ fontWeight: 700 }}>{theaterSelectedMovie.title}</div>
+                        <div className="bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-lg p-3 mt-3 text-left">
+                          <div className="flex justify-between gap-2.5 items-center">
+                            <div className="font-bold">{theaterSelectedMovie.title}</div>
                             <button
                               type="button"
                               onClick={() => setTheaterSelectedMovie(null)}
-                              style={{ background: 'transparent', border: 'none', color: '#9ca3af', display: 'inline-flex' }}
+                              className="bg-transparent border-none text-slate-400 inline-flex"
                               aria-label="Clear selected movie"
                             >
                               <X size={16} />
                             </button>
                           </div>
-                          <div className="text-sm" style={{ color: '#9ca3af', marginTop: '6px' }}>
+                          <div className="text-sm text-slate-400 mt-1.5">
                             Selected movie for this theater trip.
                           </div>
                         </div>
@@ -820,7 +756,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                     </div>
 
                     {!theaterWriteInMode && (
-                      <div style={{ marginTop: '18px', textAlign: 'left' }}>
+                      <div className="mt-4 text-left">
                         <button
                           type="button"
                           onClick={() => {
@@ -831,7 +767,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                             setTheaterSelectedMovie(null)
                             setTheaterError('')
                           }}
-                          style={{ background: 'transparent', border: '1px dashed rgba(255,215,0,0.5)', color: 'gold', padding: '10px 12px', borderRadius: '12px', width: '100%' }}
+                          className="border border-dashed border-amber-400/50 text-amber-400 p-2.5 rounded-lg w-full"
                         >
                           Can’t find it? Write in a movie
                         </button>
@@ -839,62 +775,53 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                     )}
 
                     {theaterWriteInMode && (
-                      <div style={{ marginTop: '16px', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        <div className="flex-gap" style={{ alignItems: 'center' }}>
+                      <div className="mt-4 text-left flex flex-col gap-3">
+                        <div className="flex items-center gap-2.5">
                           <input
                             placeholder="Movie Title"
                             value={theaterWriteInTitle}
                             onChange={(e) => setTheaterWriteInTitle(e.target.value)}
-                            style={{ flex: 1, minWidth: 0 }}
+                            className="flex-1 min-w-0 bg-black/30 border border-white/10 text-white p-3.5 rounded-lg text-base"
                           />
-                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'rgba(0,0,0,0.3)', borderRadius: '8px', padding: '4px 8px', border: `1px solid ${theaterWriteInScoreColor}`, color: theaterWriteInScoreColor, height: '32px' }}>
-                            <span role="img" aria-label="tomato" style={{ fontSize: '1.1rem' }}>🍅</span>
+                          <div className={`inline-flex items-center gap-1 bg-black/30 rounded-lg p-1 border`} style={{ color: theaterWriteInScoreColor, borderColor: theaterWriteInScoreColor }}>
+                            <span role="img" aria-label="tomato" className="text-lg">🍅</span>
                             <input
                               type="text"
                               inputMode="numeric"
                               pattern="[0-9]*"
                               value={theaterWriteInScore}
                               onChange={(e) => setTheaterWriteInScore(e.target.value.replace(/[^0-9]/g, ''))}
-                              style={{ width: '24px', background: 'transparent', border: 'none', color: theaterWriteInScoreColor, textAlign: 'center', padding: 0 }}
+                              className="w-6 bg-transparent border-none text-center p-0"
+                              style={{ color: theaterWriteInScoreColor }}
                             />
-                            <span style={{ fontWeight: 700 }}>%</span>
+                            <span className="font-bold">%</span>
                           </div>
                         </div>
                         <textarea
                           placeholder="Write a description for the movie here!"
                           value={theaterWriteInDescription}
                           onChange={(e) => setTheaterWriteInDescription(e.target.value)}
-                          style={{ minHeight: '90px', resize: 'none' }}
+                          className="min-h-[90px] resize-none bg-black/30 border border-white/10 text-white p-3.5 rounded-lg text-base"
                         />
-                        <div className="text-sm" style={{ color: '#9ca3af' }}>Add what genres you think it hits!</div>
-                        <div className="flex-gap">
-                          <select value={theaterWriteInGenreOption} onChange={(e) => setTheaterWriteInGenreOption(e.target.value)} style={{ flex: 1, height: '52px', paddingRight: '64px' }}>
+                        <div className="text-sm text-slate-400">Add what genres you think it hits!</div>
+                        <div className="flex gap-2.5">
+                          <select value={theaterWriteInGenreOption} onChange={(e) => setTheaterWriteInGenreOption(e.target.value)} className="flex-1 h-14 pr-16 bg-black/30 border border-white/10 text-white p-3.5 rounded-lg text-base">
                             {genres.map(g => <option key={g} value={g}>{g}</option>)}
                           </select>
                           <button
                             onClick={() => setTheaterWriteInGenres(prev => prev.includes(theaterWriteInGenreOption) ? prev : [...prev, theaterWriteInGenreOption])}
-                            style={{ height: '36px', alignSelf: 'center', padding: '0 12px', borderRadius: '10px', background: 'rgba(255,255,255,0.1)', color: 'white', fontWeight: 700 }}
+                            className="self-center px-3 h-9 rounded-lg bg-white/10 text-white font-bold"
                           >
                             Add
                           </button>
                         </div>
                         {theaterWriteInGenres.length > 0 && (
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                          <div className="flex flex-wrap gap-2">
                             {theaterWriteInGenres.map(g => (
                               <button
                                 key={g}
                                 onClick={() => setTheaterWriteInGenres(prev => prev.filter(item => item !== g))}
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '6px',
-                                  padding: '6px 10px',
-                                  borderRadius: '999px',
-                                  border: '1px solid rgba(0,229,255,0.4)',
-                                  background: 'rgba(0,229,255,0.12)',
-                                  color: '#00E5FF',
-                                  fontSize: '0.75rem'
-                                }}
+                                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-accent/40 bg-accent/20 text-accent text-xs"
                               >
                                 {g}
                                 <X size={12} />
@@ -906,12 +833,12 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                     )}
 
                     {theaterError && (
-                      <div className="glass-panel" style={{ marginTop: '14px', border: '1px solid rgba(255,0,85,0.35)', background: 'rgba(255,0,85,0.12)', color: '#ffd1dc', textAlign: 'center' }}>
+                      <div className="bg-red-500/10 border border-red-500/30 text-red-200 rounded-2xl p-3 text-center mt-4">
                         {theaterError}
                       </div>
                     )}
 
-                    <button onClick={handleTheaterNomination} style={{ background: 'gold', color: 'black', width: '100%', padding: '15px', borderRadius: '12px', marginTop: '15px' }}>Nominate Trip</button>
+                    <button onClick={handleTheaterNomination} className="bg-amber-400 text-black w-full p-4 rounded-lg mt-4 font-bold">Nominate Trip</button>
                 </div>
             )}
         </div>
@@ -922,7 +849,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
               setActiveTab('search')
               setIsWritingIn(true)
             }}
-            style={{ width: '100%', marginTop: '12px', background: '#00E5FF', color: 'black', padding: '12px', borderRadius: '12px', fontWeight: 700 }}
+            className="w-full mt-3 bg-accent text-black p-3 rounded-lg font-bold"
           >
             + Write In Movie
           </button>
@@ -933,45 +860,41 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
 }
 
 function TabButton({ active, children, onClick }) {
-    return <button onClick={onClick} style={{ padding: '8px 16px', borderRadius: '20px', whiteSpace: 'nowrap', background: active ? 'white' : 'rgba(255,255,255,0.1)', color: active ? 'black' : 'white', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem' }}>{children}</button>
+    return <button onClick={onClick} className={`px-4 py-2 rounded-full whitespace-nowrap ${active ? 'bg-white text-black' : 'bg-white/10 text-white'} flex items-center gap-1.5 text-sm font-semibold`}>{children}</button>
 }
 
 function MovieRow({ movie, onSelect, showWatchlistAction = false, isInWatchlist = false, onToggleWatchlist }) {
     const description = movie.description?.trim()
-    const scoreColor = movie.rt_score >= 80 ? '#4ade80' : movie.rt_score >= 60 ? '#facc15' : '#94a3b8'
+    const scoreColor = movie.rt_score >= 80 ? 'text-green-400 border-green-400' : movie.rt_score >= 60 ? 'text-yellow-400 border-yellow-400' : 'text-slate-400 border-slate-400'
     const yearLabel = movie.year ? ` (${movie.year})` : ''
     const isClickable = typeof onSelect === 'function'
+    const posterUrl = movie.poster_path ? `${POSTER_BASE_URL}${movie.poster_path}` : null
+
     return (
-      <div onClick={isClickable ? onSelect : undefined} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', marginBottom: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', cursor: isClickable ? 'pointer' : 'default', gap: '12px' }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: '600' }}>
+      <div onClick={isClickable ? onSelect : undefined} className={`flex justify-between items-center p-3 mb-2 bg-white/5 rounded-lg gap-3 ${isClickable ? 'cursor-pointer' : ''}`}>
+        {posterUrl && <img src={posterUrl} alt={movie.title} className="w-10 h-14 object-cover rounded-md bg-slate-800" />}
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold">
             {movie.title}
             {movie.year ? (
-              <span className="text-sm" style={{ color: '#94a3b8', marginLeft: '6px' }}>{yearLabel}</span>
+              <span className="text-sm text-slate-400 ml-1.5">{yearLabel}</span>
             ) : null}
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+          <div className="flex flex-wrap items-center gap-2 mt-1">
             {movie.rt_score !== null && movie.rt_score !== undefined && (
               <span
-                style={{
-                  border: `1px solid ${scoreColor}`,
-                  color: scoreColor,
-                  padding: '4px 8px',
-                  borderRadius: '10px',
-                  fontSize: '0.8rem',
-                  fontWeight: 600
-                }}
+                className={`border px-2 py-1 rounded-lg text-xs font-bold ${scoreColor}`}
               >
                 🍅 {movie.rt_score}%
               </span>
             )}
             {(movie.rt_score !== null && movie.rt_score !== undefined) && (
-              <span className="text-sm" style={{ color: '#64748b' }}>|</span>
+              <span className="text-sm text-slate-600">|</span>
             )}
-            <div className="text-sm">{movie.genre?.join(', ')}</div>
+            <div className="text-sm text-slate-400">{movie.genre?.join(', ')}</div>
           </div>
           {description && (
-            <div className="text-sm" style={{ color: '#9ca3af', marginTop: '6px' }}>
+            <div className="text-sm text-slate-400 mt-1.5">
               {description}
             </div>
           )}
@@ -983,19 +906,7 @@ function MovieRow({ movie, onSelect, showWatchlistAction = false, isInWatchlist 
               e.stopPropagation()
               onToggleWatchlist?.(movie)
             }}
-            style={{
-              border: `1px solid ${isInWatchlist ? 'rgba(0,229,255,0.45)' : 'rgba(255,255,255,0.35)'}`,
-              background: isInWatchlist ? 'rgba(0,229,255,0.18)' : 'rgba(255,255,255,0.08)',
-              color: isInWatchlist ? '#00E5FF' : '#ffffff',
-              width: '34px',
-              height: '34px',
-              borderRadius: '999px',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              flexShrink: 0
-            }}
+            className={`border w-9 h-9 rounded-full inline-flex items-center justify-center cursor-pointer shrink-0 ${isInWatchlist ? 'border-accent/50 bg-accent/20 text-accent' : 'border-white/30 bg-white/10 text-white'}`}
             aria-pressed={isInWatchlist}
             aria-label={isInWatchlist ? 'Remove from watchlist' : 'Add to watchlist'}
             title={isInWatchlist ? 'Remove from watchlist' : 'Add to watchlist'}
@@ -1007,7 +918,7 @@ function MovieRow({ movie, onSelect, showWatchlistAction = false, isInWatchlist 
                 animate={{ scale: 1, rotate: 0, opacity: 1 }}
                 exit={{ scale: 0.6, rotate: 90, opacity: 0 }}
                 transition={{ duration: 0.18 }}
-                style={{ display: 'flex' }}
+                className="flex"
               >
                 {isInWatchlist ? <Check size={16} /> : <Plus size={16} />}
               </motion.span>
@@ -1021,35 +932,31 @@ function MovieRow({ movie, onSelect, showWatchlistAction = false, isInWatchlist 
 function CrewWatchlistRow({ entry, onSelect }) {
     const { movie, users } = entry
     const description = movie.description?.trim()
-    const scoreColor = movie.rt_score >= 80 ? '#4ade80' : movie.rt_score >= 60 ? '#facc15' : '#94a3b8'
+    const scoreColor = movie.rt_score >= 80 ? 'text-green-400 border-green-400' : movie.rt_score >= 60 ? 'text-yellow-400 border-yellow-400' : 'text-slate-400 border-slate-400'
     const names = users.map(u => u.name)
     const displayNames = names.length > 4 ? `${names.slice(0, 4).join(', ')} +${names.length - 4} more` : names.join(', ')
+    const posterUrl = movie.poster_path ? `${POSTER_BASE_URL}${movie.poster_path}` : null
+
     return (
-      <div onClick={onSelect} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', marginBottom: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', cursor: 'pointer', gap: '12px' }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: '600' }}>{movie.title}</div>
-          <div className="text-sm">{movie.genre?.join(', ')}</div>
+      <div onClick={onSelect} className="flex justify-between items-center p-3 mb-2 bg-white/5 rounded-lg cursor-pointer gap-3">
+        {posterUrl && <img src={posterUrl} alt={movie.title} className="w-10 h-14 object-cover rounded-md bg-slate-800" />}
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold">{movie.title}</div>
+          <div className="text-sm text-slate-400">{movie.genre?.join(', ')}</div>
           {description && (
-            <div className="text-sm" style={{ color: '#9ca3af', marginTop: '6px' }}>
+            <div className="text-sm text-slate-400 mt-1.5">
               {description}
             </div>
           )}
           {displayNames && (
-            <div className="text-sm" style={{ color: '#cbd5e1', marginTop: '6px' }}>
+            <div className="text-sm text-slate-300 mt-1.5">
               On: {displayNames}
             </div>
           )}
         </div>
         {movie.rt_score !== null && movie.rt_score !== undefined && (
           <span
-            style={{
-              border: `1px solid ${scoreColor}`,
-              color: scoreColor,
-              padding: '4px 8px',
-              borderRadius: '10px',
-              fontSize: '0.8rem',
-              fontWeight: 600
-            }}
+            className={`border px-2 py-1 rounded-lg text-xs font-bold ${scoreColor}`}
           >
             🍅 {movie.rt_score}%
           </span>

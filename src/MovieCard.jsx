@@ -1,4 +1,6 @@
 import { motion } from 'framer-motion'
+import { POSTER_BASE_URL } from './tmdbClient'
+import { clsx } from 'clsx'
 
 export default function MovieCard({ movie, children, meta, topRight }) {
   // Fallback for missing data
@@ -10,41 +12,36 @@ export default function MovieCard({ movie, children, meta, topRight }) {
   const genres = hasGenres ? genreList.join(', ') : ''
   const description = movie.description?.trim() || ''
   
+  const posterUrl = movie.poster_path ? `${POSTER_BASE_URL}${movie.poster_path}` : null
+
   // Color code the score
-  const scoreColor = movie.rt_score >= 80 ? '#4ade80' : movie.rt_score >= 60 ? '#facc15' : '#94a3b8'
+  const scoreColor = movie.rt_score >= 80 ? 'text-green-400 border-green-400' : movie.rt_score >= 60 ? 'text-yellow-400 border-yellow-400' : 'text-slate-400 border-slate-400'
 
   return (
     <motion.div 
       layout /* This magic prop makes other cards slide around when this one expands */
-      className="glass-panel" 
-      style={{ marginBottom: '16px', padding: '16px', borderRadius: '16px', position: 'relative', overflow: 'visible' }}
+      className="bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-2xl shadow-xl p-4 mb-4 relative"
     >
       {topRight && (
-        <div style={{ position: 'absolute', top: '-12px', right: '-12px', zIndex: 2 }}>
+        <div className="absolute -top-3 -right-3 z-10">
           {topRight}
         </div>
       )}
       {/* HEADER ROW */}
       {(hasTitle || hasGenres || hasScore) && (
-        <div className="flex-between" style={{ alignItems: 'flex-start', marginBottom: '8px' }}>
+        <div className="flex justify-between items-start mb-2">
           <div>
-            {hasTitle && <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '700' }}>{movie.title}</h3>}
-            {hasGenres && <p className="text-sm" style={{ marginTop: '4px', color: 'var(--text-muted)' }}>{genres}</p>}
+            {hasTitle && <h3 className="text-lg font-bold">{movie.title}</h3>}
+            {hasGenres && <p className="text-sm text-slate-400 mt-1">{genres}</p>}
           </div>
           
           {(hasScore || hasTitle) && (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
+            <div className="flex flex-col items-end gap-1.5">
               {/* SCORE BADGE */}
-              <div style={{ 
-                background: 'rgba(0,0,0,0.3)', 
-                padding: '4px 8px', 
-                borderRadius: '8px', 
-                border: `1px solid ${scoreColor}`,
-                color: scoreColor,
-                fontWeight: 'bold',
-                fontSize: '0.85rem',
-                whiteSpace: 'nowrap'
-              }}>
+              <div className={clsx(
+                "bg-black/30 px-2 py-1 rounded-md border text-xs font-bold whitespace-nowrap",
+                scoreColor
+              )}>
                 {score === '-' ? '-' : `🍅 ${score}%`}
               </div>
             </div>
@@ -54,15 +51,15 @@ export default function MovieCard({ movie, children, meta, topRight }) {
 
       {/* METADATA (Like "Nominated by...") */}
       {meta && (
-        <div style={{ marginBottom: '12px' }}>
+        <div className="mb-3">
           {meta}
         </div>
       )}
 
       {/* DESCRIPTION */}
       {description && (
-        <div style={{ position: 'relative', marginBottom: '16px' }}>
-          <p style={{ margin: 0, fontSize: '0.95rem', color: '#cbd5e1', lineHeight: '1.4em' }}>
+        <div className="relative mb-4">
+          <p className="text-sm text-slate-300 leading-normal">
             {description}
           </p>
         </div>
@@ -70,7 +67,7 @@ export default function MovieCard({ movie, children, meta, topRight }) {
 
       {/* ACTION AREA (Voting Buttons or Remove Button go here) */}
       {children && (
-        <div style={{ paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+        <div className="pt-3 border-t border-white/10">
           {children}
         </div>
       )}

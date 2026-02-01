@@ -1,1284 +1,658 @@
 import { useEffect, useState } from 'react'
-import { useParams, useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from './supabaseClient'
-import { AnimatePresence, motion } from 'framer-motion'
-import { ThumbsUp, ThumbsDown, Heart, Plus, Film, MapPin, Calendar, Clock, Ticket, ChevronLeft, Link as LinkIcon, Check, Users, Star, RotateCcw, ChevronDown, ChevronUp, X, Minus, PlayCircle, Search } from 'lucide-react'
-import SearchMovies from './SearchMovies'
-import ResultsView from './ResultsView'
-import MovieCard from './MovieCard'
-import RateMovie from './RateMovie'
+
+import { Calendar, MapPin, MoreHorizontal, PlayCircle, Plus, ThumbsUp, Film, Users, Trash2, LogOut, Edit, AlertTriangle, Clock, Link as LinkIcon, Check, X, ChevronRight } from 'lucide-react'
+import DateTimePickerSheet from './DateTimePickerSheet'
 import LoadingSpinner from './LoadingSpinner'
 
 export default function EventView() {
-  const { code } = useParams() // Event ID
+  const { code } = useParams()
   const navigate = useNavigate()
-  const location = useLocation()
-  const navState = location.state || {}
-  
   const [event, setEvent] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [error, setError] = useState('')
+  const [isEditing, setIsEditing] = useState(false)
+  const [editedTitle, setEditedTitle] = useState('')
+  const [editedEventDate, setEditedEventDate] = useState('')
+  const [editedLocationAddress, setEditedLocationAddress] = useState('')
+  const [attendees, setAttendees] = useState([])
+  const [attendeesLoading, setAttendeesLoading] = useState(true)
+  const [nominations, setNominations] = useState([])
+  const [nominationsLoading, setNominationsLoading] = useState(true)
+  const [nominationsError, setNominationsError] = useState('')
   const [userId, setUserId] = useState(null)
-  const [myGroups, setMyGroups] = useState([])
-  const [showAddCrew, setShowAddCrew] = useState(false)
-  const [selectedCrewId, setSelectedCrewId] = useState('')
-  const [showEditEvent, setShowEditEvent] = useState(false)
-  const [editTitle, setEditTitle] = useState('')
-  const [editLocation, setEditLocation] = useState('')
-  const [editDate, setEditDate] = useState('')
-  const [savingEvent, setSavingEvent] = useState(false)
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-  const [showRemoveNominationConfirm, setShowRemoveNominationConfirm] = useState(false)
-  const [pendingRemoval, setPendingRemoval] = useState(null)
-  
-  // Split Ballot States
-  const [myNominations, setMyNominations] = useState([])
-  const [crewNominations, setCrewNominations] = useState([])
-  
-  const [myVotes, setMyVotes] = useState({}) 
-  const [showMyNominations, setShowMyNominations] = useState(true)
-  const [showCrewNominations, setShowCrewNominations] = useState(true)
-  const [ballotFilter, setBallotFilter] = useState('all')
-  const [showSearch, setShowSearch] = useState(false)
-  const [showResultsView, setShowResultsView] = useState(false)
-  const [showNoNominationsNotice, setShowNoNominationsNotice] = useState(false)
-  const [showInvite, setShowInvite] = useState(false)
-  const [inviteAddToGroup, setInviteAddToGroup] = useState(false)
-  const [inviteCopied, setInviteCopied] = useState(false)
+  const [myNominationsCount, setMyNominationsCount] = useState(0)
+  const [totalNominations, setTotalNominations] = useState(0)
+  const [hasVoted, setHasVoted] = useState(false)
   const [groupShareCode, setGroupShareCode] = useState('')
-  const [showAttendees, setShowAttendees] = useState(false)
-  const [eventAttendees, setEventAttendees] = useState([])
-  const [attendeesLoading, setAttendeesLoading] = useState(false)
-  const [showMapChoice, setShowMapChoice] = useState(false)
-  const [mapQuery, setMapQuery] = useState('')
-  const [selectedNomination, setSelectedNomination] = useState(null)
-  const [showRateMovie, setShowRateMovie] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [showAddAudience, setShowAddAudience] = useState(false)
+  const [showMoreMenu, setShowMoreMenu] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [showMapOptions, setShowMapOptions] = useState(false)
+  const [selectedAttendee, setSelectedAttendee] = useState(null)
+  const [sharedEventCount, setSharedEventCount] = useState(0)
+  const [loadingSharedEvents, setLoadingSharedEvents] = useState(false)
+  
+  // Date Picker State
   const [showDateTimePicker, setShowDateTimePicker] = useState(false)
-  const [showEventGuide, setShowEventGuide] = useState(true)
   const [pickedDate, setPickedDate] = useState(null)
   const [pickedTime, setPickedTime] = useState('')
   const [pickedPeriod, setPickedPeriod] = useState('PM')
-  const [displayMonth, setDisplayMonth] = useState(() => {
-    const now = new Date()
-    return new Date(now.getFullYear(), now.getMonth(), 1)
-  })
-  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false)
-  const [showCreatorLeaveConfirm, setShowCreatorLeaveConfirm] = useState(false)
-  const [leavingEvent, setLeavingEvent] = useState(false)
-  const isCreator = userId && event?.created_by === userId
-  const canEditEvent = Boolean(userId)
+  const [displayMonth, setDisplayMonth] = useState(() => new Date())
 
   useEffect(() => {
-    if (code) loadData()
-  }, [code])
+    let active = true
 
-  useEffect(() => {
-    const dismissed = localStorage.getItem('eventGuideDismissed')
-    setShowEventGuide(dismissed !== 'true')
-  }, [])
-
-  useEffect(() => {
-    if (!showAttendees) return
-    fetchAttendees()
-  }, [showAttendees])
-
-  useEffect(() => {
-    if (!code) return
-    const channel = supabase
-      .channel(`events-${code}`)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'events', filter: `id=eq.${code}` }, (payload) => {
-        const updated = payload.new
-        setEvent(prev => (prev ? { ...prev, ...updated } : updated))
-        if (updated?.selected_nomination_id) {
-          fetchSelectedNomination(updated.selected_nomination_id)
-        } else if (updated?.selected_movie_id) {
-          fetchSelectedNominationByMovie(updated.selected_movie_id)
-        } else {
-          setSelectedNomination(null)
-        }
-      })
-      .subscribe()
-    return () => supabase.removeChannel(channel)
-  }, [code])
-
-  async function loadData() {
-    try {
+    async function loadAll() {
+      if (!code) return
       setLoading(true)
-      // 1. Get Event
-      const { data: eventData, error: eventError } = await supabase.from('events').select('*').eq('id', code).single()
-      if (eventError) throw eventError
-      setEvent(eventData)
-      if (eventData?.selected_nomination_id) {
-        fetchSelectedNomination(eventData.selected_nomination_id)
-      } else if (eventData?.selected_movie_id) {
-        fetchSelectedNominationByMovie(eventData.selected_movie_id)
+      setError('')
+
+      const { data: authData } = await supabase.auth.getUser()
+      const currentUserId = authData?.user?.id || null
+      if (active) setUserId(currentUserId)
+
+      const { data: eventData, error: eventError } = await supabase
+        .from('events')
+        .select('*')
+        .eq('id', code)
+        .single()
+
+      if (!active) return
+
+      if (eventError) {
+        setError('Could not load event.')
+        setEvent(null)
+        setLoading(false)
+        return
       }
-      if (eventData.group_id) {
-        const { data: groupData } = await supabase.from('groups').select('share_code').eq('id', eventData.group_id).single()
-        setGroupShareCode(groupData?.share_code || '')
-      } else {
+
+      setEvent(eventData)
+
+      if (eventData?.group_id) {
+        const { data: groupData } = await supabase
+          .from('groups')
+          .select('share_code')
+          .eq('id', eventData.group_id)
+          .single()
+        if (active) setGroupShareCode(groupData?.share_code || '')
+      } else if (active) {
         setGroupShareCode('')
       }
 
-      // 2. Get Nominations
-      const nominations = await refreshNominations()
-
-      // 3. Get Votes
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-          setUserId(user.id)
-          const nominationIdByMovieId = new Map()
-          ;(nominations || []).forEach((nom) => {
-            if (nom.movie?.id) nominationIdByMovieId.set(nom.movie.id, nom.id)
-          })
-          const { data: votes } = await supabase
-            .from('votes')
-            .select('nomination_id, movie_id, vote_type')
-            .eq('event_id', code)
-            .eq('user_id', user.id)
-          const voteMap = {}
-          votes?.forEach(v => {
-            const key = v.nomination_id || nominationIdByMovieId.get(v.movie_id)
-            if (key) voteMap[key] = v.vote_type
-          })
-          setMyVotes(voteMap)
-          fetchMyGroups(user.id)
-          await supabase
-            .from('event_attendees')
-            .upsert([{ event_id: code, user_id: user.id }], { onConflict: 'event_id, user_id' })
+      setAttendeesLoading(true)
+      const { data: attendeeData } = await supabase
+        .from('event_attendees')
+        .select('user_id, profiles(display_name, username)')
+        .eq('event_id', code)
+      if (active) {
+        const list = (attendeeData || []).map((row) => ({
+          id: row.user_id,
+          name: row.profiles?.display_name || row.profiles?.username || 'Movie Fan',
+        }))
+        setAttendees(list)
+        setAttendeesLoading(false)
       }
-      await fetchAttendees()
-    } catch (err) {
-      console.error(err)
-      setError("Could not load event. It might have been deleted.")
-    } finally {
-      setLoading(false)
+
+      setNominationsLoading(true)
+      setNominationsError('')
+      const { data: nominationsData, error: nominationsLoadError } = await supabase
+        .from('nominations')
+        .select('id, nominated_by, movie:movies (*)')
+        .eq('event_id', code)
+
+      if (active) {
+        if (nominationsLoadError) {
+          setNominationsError('Unable to load nominations.')
+          setNominations([])
+          setTotalNominations(0)
+          setMyNominationsCount(0)
+        } else {
+          const list = nominationsData || []
+          setNominations(list.map((row) => row.movie).filter(Boolean))
+          setTotalNominations(list.length)
+          if (currentUserId) {
+            setMyNominationsCount(list.filter((row) => row.nominated_by === currentUserId).length)
+          } else {
+            setMyNominationsCount(0)
+          }
+        }
+        setNominationsLoading(false)
+      }
+
+      if (currentUserId) {
+        const { data: voteData } = await supabase
+          .from('votes')
+          .select('id')
+          .eq('event_id', code)
+          .eq('user_id', currentUserId)
+          .limit(1)
+        if (active) setHasVoted((voteData || []).length > 0)
+      } else if (active) {
+        setHasVoted(false)
+      }
+
+      if (active) setLoading(false)
+    }
+
+    loadAll()
+
+    return () => {
+      active = false
+    }
+  }, [code])
+
+  useEffect(() => {
+    if (event) {
+      setEditedTitle(event.title || '')
+      setEditedEventDate(event.event_date || '')
+      setEditedLocationAddress(event.location_address || '')
+    }
+  }, [event])
+
+  const formatDateTimeLabel = (value) => {
+    if (!value) return "Pick date & time"
+    const date = new Date(value)
+    if (isNaN(date.getTime())) return "Pick date & time"
+    return date.toLocaleString([], { weekday: "short", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" })
+  }
+
+  const formatDateTime = (value) => {
+    if (!value) return 'No date set'
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return 'No date set'
+    return date.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+  }
+
+  const inviteLink = (() => {
+    if (!code) return ''
+    const origin = window.location.origin
+    if (groupShareCode) return `${origin}/join/${groupShareCode}?eventId=${code}`
+    return `${origin}/room/${code}`
+  })()
+
+  const handleSaveEdit = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('events')
+        .update({
+          title: editedTitle,
+          event_date: editedEventDate,
+          location_address: editedLocationAddress,
+        })
+        .eq('id', code)
+        .select()
+
+      if (error) {
+        throw error
+      }
+
+      setEvent(data[0])
+      setIsEditing(false)
+      setError('')
+    } catch (error) {
+      console.error('Error saving event:', error)
+      setError('Error saving event details.')
     }
   }
 
-  async function refreshNominations() {
-    const { data: { user } } = await supabase.auth.getUser()
-    const { data } = await supabase
-      .from('nominations')
-      .select('id, nominated_by, nomination_type, theater_name, theater_notes, movie:movies (*)')
-      .eq('event_id', code)
-    
-    if (data) {
-        setMyNominations(data.filter(n => n.nominated_by === user.id))
-        setCrewNominations(data.filter(n => n.nominated_by !== user.id))
-    }
-    return data || []
+  const handleCancelEdit = () => {
+    setEditedTitle(event?.title || '')
+    setEditedEventDate(event?.event_date || '')
+    setEditedLocationAddress(event?.location_address || '')
+    setIsEditing(false)
   }
 
-  async function fetchSelectedNomination(nominationId) {
-    const { data } = await supabase
-      .from('nominations')
-      .select('id, nomination_type, theater_name, theater_notes, movie:movies (*)')
-      .eq('id', nominationId)
-      .single()
-    if (data) setSelectedNomination(data)
-  }
-
-  async function fetchSelectedNominationByMovie(movieId) {
-    if (!movieId) return
-    const { data } = await supabase
-      .from('nominations')
-      .select('id, nomination_type, theater_name, theater_notes, movie:movies (*)')
-      .eq('event_id', code)
-      .eq('movie_id', movieId)
-      .single()
-    if (data) {
-      setSelectedNomination(data)
-      setEvent(prev => (prev ? { ...prev, selected_nomination_id: data.id } : prev))
-    }
-  }
-
-  async function fetchMyGroups(currentUserId) {
-    const { data } = await supabase
-      .from('group_members')
-      .select('group:groups (id, name)')
-      .eq('user_id', currentUserId)
-    if (data) setMyGroups(data.map(item => item.group))
-  }
-
-  async function fetchAttendees() {
-    setAttendeesLoading(true)
-    const { data } = await supabase
-      .from('event_attendees')
-      .select('user_id, profiles(display_name, username)')
-      .eq('event_id', code)
-    setEventAttendees(data || [])
-    setAttendeesLoading(false)
-  }
-
-  function formatDateTimeLabel(value) {
-    if (!value) return 'Pick date & time'
-    const d = new Date(value)
-    return d.toLocaleString([], { weekday: 'short', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-  }
-
-  function openDateTimePicker() {
-    const existing = editDate ? new Date(editDate) : null
-    const base = existing || new Date()
+  const openDateTimePicker = () => {
+    const existing = editedEventDate ? new Date(editedEventDate) : null
     if (!existing) {
-      base.setHours(19, 0, 0, 0)
+      // Default to 7 PM today if no date set
+      const now = new Date()
+      now.setHours(19, 0, 0, 0)
+      setPickedDate(now)
+      setPickedTime("19:00")
+      setPickedPeriod("PM")
+      setDisplayMonth(new Date(now.getFullYear(), now.getMonth(), 1))
+      setShowDateTimePicker(true)
+      return
     }
-    const roundedMinutes = Math.round(base.getMinutes() / 30) * 30
-    base.setMinutes(roundedMinutes)
-    base.setSeconds(0)
-    base.setMilliseconds(0)
-    setPickedDate(new Date(base.getFullYear(), base.getMonth(), base.getDate()))
-    setPickedTime(`${String(base.getHours()).padStart(2, '0')}:${String(base.getMinutes()).padStart(2, '0')}`)
-    setPickedPeriod(base.getHours() >= 12 ? 'PM' : 'AM')
-    setDisplayMonth(new Date(base.getFullYear(), base.getMonth(), 1))
+    setPickedDate(existing)
+    setPickedTime(`${String(existing.getHours()).padStart(2, "0")}:${String(existing.getMinutes()).padStart(2, "0")}`)
+    setPickedPeriod(existing.getHours() >= 12 ? "PM" : "AM")
+    setDisplayMonth(new Date(existing.getFullYear(), existing.getMonth(), 1))
     setShowDateTimePicker(true)
   }
 
-  function confirmDateTime() {
+  const confirmDateTime = () => {
     if (!pickedDate || !pickedTime) return
-    const [hh, mm] = pickedTime.split(':').map(Number)
+    const [hh, mm] = pickedTime.split(":").map(Number)
     const composed = new Date(pickedDate.getFullYear(), pickedDate.getMonth(), pickedDate.getDate(), hh, mm, 0, 0)
-    setEditDate(composed.toISOString())
+    setEditedEventDate(composed.toISOString())
     setShowDateTimePicker(false)
   }
 
-  function startEditEvent() {
-    if (!event) return
-    setEditTitle(event.title || '')
-    setEditLocation(event.location_address || '')
-    setEditDate(event.event_date || '')
-    setShowEditEvent(true)
+  const handleCopyInvite = async () => {
+    if (!inviteLink) return
+    try {
+      await navigator.clipboard.writeText(inviteLink)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch (err) {
+      console.error(err)
+    }
   }
 
-  async function handleUpdateEvent() {
-    const nextTitle = editTitle.trim()
-    if (!nextTitle) return
-    setSavingEvent(true)
-    const updates = {
-      title: nextTitle,
-      event_date: editDate || null,
-      location_address: editLocation.trim() || null
-    }
-    const { error } = await supabase
-      .from('events')
-      .update(updates)
-      .eq('id', code)
-    setSavingEvent(false)
+  const handleDeleteEvent = async () => {
+    if (!code) return
+    setIsDeleting(true)
+    const { error } = await supabase.from('events').delete().eq('id', code)
     if (error) {
-      alert(`Error: ${error.message}`)
-      return
+      alert('Error deleting event: ' + error.message)
+      setIsDeleting(false)
+    } else {
+      navigate('/')
     }
-    setEvent(prev => (prev ? { ...prev, ...updates } : prev))
-    setShowEditEvent(false)
   }
 
-  async function handleDeleteEvent() {
-    const { error: votesError } = await supabase
-      .from('votes')
-      .delete()
-      .eq('event_id', code)
-    if (votesError) {
-      alert(`Error: ${votesError.message}`)
-      return
-    }
-    const { error: nominationsError } = await supabase
-      .from('nominations')
-      .delete()
-      .eq('event_id', code)
-    if (nominationsError) {
-      alert(`Error: ${nominationsError.message}`)
-      return
-    }
-    const { error: attendeesError } = await supabase
+  const handleLeaveEvent = async () => {
+    if (!userId || !code) return
+    const { error } = await supabase
       .from('event_attendees')
       .delete()
       .eq('event_id', code)
-    if (attendeesError) {
-      alert(`Error: ${attendeesError.message}`)
-      return
-    }
-    const { error } = await supabase
-      .from('events')
-      .delete()
-      .eq('id', code)
-    if (error) {
-      alert(`Error: ${error.message}`)
-      return
-    }
-    setShowDeleteConfirm(false)
-    navigate(backTarget)
+      .eq('user_id', userId)
+
+    if (error) alert('Error leaving event: ' + error.message)
+    else navigate('/')
   }
 
-  async function handleLeaveEvent() {
-    setLeavingEvent(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      setLeavingEvent(false)
-      return
+  const openMaps = (type) => {
+    if (!event?.location_address) return
+    const query = encodeURIComponent(event.location_address)
+    if (type === 'apple') {
+      window.open(`http://maps.apple.com/?q=${query}`, '_blank')
+    } else {
+      window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank')
     }
-
-    const { data: nominations } = await supabase
-      .from('nominations')
-      .select('id, movie_id')
-      .eq('event_id', code)
-      .eq('nominated_by', user.id)
-    const nominationIds = (nominations || []).map(n => n.id)
-    const movieIds = (nominations || []).map(n => n.movie_id).filter(Boolean)
-
-    await supabase
-      .from('nominations')
-      .delete()
-      .eq('event_id', code)
-      .eq('nominated_by', user.id)
-
-    if (nominationIds.length > 0) {
-      await supabase
-        .from('votes')
-        .delete()
-        .eq('event_id', code)
-        .in('nomination_id', nominationIds)
-    }
-    if (movieIds.length > 0) {
-      await supabase
-        .from('votes')
-        .delete()
-        .eq('event_id', code)
-        .in('movie_id', movieIds)
-    }
-
-    await supabase
-      .from('votes')
-      .delete()
-      .eq('event_id', code)
-      .eq('user_id', user.id)
-
-    await supabase
-      .from('event_attendees')
-      .delete()
-      .eq('event_id', code)
-      .eq('user_id', user.id)
-
-    setLeavingEvent(false)
-    setShowLeaveConfirm(false)
-    navigate(backTarget)
+    setShowMapOptions(false)
   }
 
-  async function handleAddCrew() {
-    if (!selectedCrewId) return
-    const { error } = await supabase
-      .from('events')
-      .update({ group_id: selectedCrewId })
-      .eq('id', code)
-    if (!error) {
-      setEvent(prev => ({ ...prev, group_id: selectedCrewId }))
-      setShowAddCrew(false)
-      setSelectedCrewId('')
-      const { data: groupData } = await supabase.from('groups').select('share_code').eq('id', selectedCrewId).single()
-      setGroupShareCode(groupData?.share_code || '')
-    }
-  }
-
-  const handleVote = async (nominationId, voteValue) => {
-    const isRemoving = myVotes[nominationId] === voteValue
-    setMyVotes((prev) => {
-      const next = { ...prev }
-      if (isRemoving) {
-        delete next[nominationId]
-      } else {
-        next[nominationId] = voteValue
-      }
-      return next
-    })
-    const { data: { user } } = await supabase.auth.getUser()
-    if (user) {
-      if (isRemoving) {
-        await supabase
-          .from('votes')
-          .delete()
-          .eq('event_id', code)
-          .eq('nomination_id', nominationId)
-          .eq('user_id', user.id)
-      } else {
-        await supabase.from('votes').upsert([
-          { event_id: code, nomination_id: nominationId, user_id: user.id, vote_type: voteValue }
-        ], { onConflict: 'event_id, nomination_id, user_id' })
-      }
-    }
-  }
-
-  const handleAddNomination = async (movie, isTheater, theaterDetails = null, nominationTypeOverride = null) => {
-    const { data: { user } } = await supabase.auth.getUser()
+  const handleAttendeeClick = async (person) => {
+    setSelectedAttendee(person)
+    setLoadingSharedEvents(true)
+    setSharedEventCount(0)
     
-    // Check both lists to prevent duplicates
-    const allNoms = [...myNominations, ...crewNominations]
-    const nominationType = nominationTypeOverride || ((isTheater || theaterDetails) ? 'theater' : 'streaming')
-    const alreadyExists = movie
-      ? allNoms.find(n => n.movie?.id === movie.id && n.nomination_type === nominationType)
-      : false
-    if (alreadyExists) return alert("Already nominated!")
-
-    const { error } = await supabase.from('nominations').insert([
-        { 
-          event_id: code, 
-          movie_id: movie?.id || null, 
-          nominated_by: user.id, 
-          nomination_type: nominationType,
-          theater_name: theaterDetails?.theater_name || null,
-          theater_notes: theaterDetails?.theater_notes || null
-        } 
-    ])
-    if (error) {
-      alert(`Error: ${error.message}`)
-      return
+    if (userId && person.id) {
+      // Find events where I am an attendee
+      const { data: myEvents } = await supabase.from('event_attendees').select('event_id').eq('user_id', userId)
+      const myEventIds = myEvents?.map(e => e.event_id) || []
+      
+      if (myEventIds.length > 0) {
+        const { count } = await supabase
+          .from('event_attendees')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', person.id)
+          .in('event_id', myEventIds)
+        setSharedEventCount(count || 0)
+      }
     }
-    refreshNominations()
+    setLoadingSharedEvents(false)
   }
 
-  const handleRemoveNomination = async (nomination) => {
-    if (!nomination) return
-    const { error: nominationError } = await supabase
-      .from('nominations')
-      .delete()
-      .eq('id', nomination.id)
-    if (nominationError) {
-      alert(`Error: ${nominationError.message}`)
-      return
-    }
-    await supabase
-      .from('votes')
-      .delete()
-      .eq('event_id', code)
-      .eq('nomination_id', nomination.id)
-    if (nomination.movie?.id) {
-      await supabase
-        .from('votes')
-        .delete()
-        .eq('event_id', code)
-        .eq('movie_id', nomination.movie.id)
-    }
-    refreshNominations()
+  const initialsFor = (name) => {
+    if (!name) return '?'
+    const parts = name.trim().split(' ').filter(Boolean)
+    const initials = parts.slice(0, 2).map((part) => part[0].toUpperCase())
+    return initials.join('') || '?'
   }
 
-  const requestRemoveNomination = (nomination) => {
-    setPendingRemoval(nomination)
-    setShowRemoveNominationConfirm(true)
-  }
+  const nominateStatus = myNominationsCount > 0
+    ? `You nominated ${myNominationsCount} movie${myNominationsCount === 1 ? '' : 's'}!`
+    : 'Add suggestions'
 
-  const confirmRemoveNomination = async () => {
-    if (!pendingRemoval) return
-    await handleRemoveNomination(pendingRemoval)
-    setPendingRemoval(null)
-    setShowRemoveNominationConfirm(false)
-  }
+  const voteStatus = hasVoted
+    ? 'Ballot submitted'
+    : totalNominations > 0
+      ? `${totalNominations} movie${totalNominations === 1 ? '' : 's'} to vote for!`
+      : 'No nominations yet'
 
-  const openMaps = () => {
-    if (!event.location_address) return
-    setMapQuery(event.location_address)
-    setShowMapChoice(true)
-  }
-
-  const handleCopyInvite = ({ closeAfter = false } = {}) => {
-    const inviteLink = groupShareCode
-      ? `${window.location.origin}/join/${groupShareCode}?eventId=${event.id}&addToGroup=${inviteAddToGroup ? '1' : '0'}`
-      : `${window.location.origin}/room/${event.id}`
-    navigator.clipboard.writeText(inviteLink)
-    setInviteCopied(true)
-    if (closeAfter) {
-      setTimeout(() => setShowInvite(false), 350)
-    }
-    setTimeout(() => setInviteCopied(false), 2000)
-  }
-
-  const handleChangeMovie = async () => {
-    const { error } = await supabase
-      .from('events')
-      .update({ selected_nomination_id: null, selected_movie_id: null })
-      .eq('id', code)
-    if (!error) {
-      setEvent(prev => (prev ? { ...prev, selected_nomination_id: null, selected_movie_id: null } : prev))
-      setSelectedNomination(null)
-      setShowResultsView(true)
-    }
-  }
-
-  const handleSelectedNomination = async ({ nominationId, movieId }) => {
-    const updates = { selected_nomination_id: nominationId, selected_movie_id: movieId || null }
-    setEvent(prev => (prev ? { ...prev, ...updates } : prev))
-    await fetchSelectedNomination(nominationId)
-  }
-
-  const isWatching = Boolean(selectedNomination)
-  const isMissingVote = (nominationId) => myVotes[nominationId] === undefined
-  const missingMyNominations = myNominations.filter(item => isMissingVote(item.id))
-  const missingCrewNominations = crewNominations.filter(item => isMissingVote(item.id))
-  const totalMissingVotes = missingMyNominations.length + missingCrewNominations.length
-  const dislikedMyNominations = myNominations.filter(item => myVotes[item.id] === -2)
-  const dislikedCrewNominations = crewNominations.filter(item => myVotes[item.id] === -2)
-  const totalDisliked = dislikedMyNominations.length + dislikedCrewNominations.length
-  const favoriteMyNominations = myNominations.filter(item => myVotes[item.id] === 2)
-  const favoriteCrewNominations = crewNominations.filter(item => myVotes[item.id] === 2)
-  const totalFavorites = favoriteMyNominations.length + favoriteCrewNominations.length
-  const selectedMovie = selectedNomination?.movie || null
-  const selectedDisplayMovie = selectedNomination ? buildNominationDisplay(selectedNomination) : null
-  const hasNominations = myNominations.length + crewNominations.length > 0
-  const filteredMyNominations = ballotFilter === 'missing'
-    ? missingMyNominations
-    : ballotFilter === 'disliked'
-      ? dislikedMyNominations
-      : ballotFilter === 'favorite'
-        ? favoriteMyNominations
-        : myNominations
-  const filteredCrewNominations = ballotFilter === 'missing'
-    ? missingCrewNominations
-    : ballotFilter === 'disliked'
-      ? dislikedCrewNominations
-      : ballotFilter === 'favorite'
-        ? favoriteCrewNominations
-        : crewNominations
-  const backTarget = navState.from === 'hub'
-    ? '/'
-    : navState.from === 'group'
-      ? (navState.groupId ? `/group/${navState.groupId}` : (event?.group_id ? `/group/${event.group_id}` : '/'))
-      : (event?.group_id ? `/group/${event.group_id}` : '/')
-  const backLabel = navState.from === 'hub'
-    ? 'My Hub'
-    : (navState.from === 'group' || event?.group_id ? 'Crew' : 'Hub')
+  const hasSelectedMovie = event?.selected_movie_id || event?.selected_nomination_id
+  const revealStatus = hasSelectedMovie 
+    ? "And the winner is..." 
+    : (totalNominations > 0 ? 'Check current standings' : 'Start ceremony')
 
   if (loading) return <LoadingSpinner label="Loading event..." />
-  if (error) return <div style={{padding:'40px', textAlign:'center', color: '#ff4d4d'}}>{error}</div>
-  if (!event) return null
+  if (error) return <div className="min-h-screen w-full flex items-center justify-center text-red-400">{error}</div>
+  if (!event) return <div className="min-h-screen w-full flex items-center justify-center text-slate-400">Event not found.</div>
 
   return (
-    <div style={{ paddingBottom: '40px', paddingRight: '28px', paddingTop: '12px', height: '100%', overflowY: 'auto', scrollbarGutter: 'stable' }}>
-      
-      {/* BACK NAVIGATION */}
-      <button onClick={() => navigate(backTarget)} style={{ background: 'none', color: '#888', padding: 0, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-        <ChevronLeft size={20} /> Back to {backLabel}
-      </button>
-
-      {/* HEADER */}
-      <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px' }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <h1 style={{ fontSize: '2rem', margin: 0, lineHeight: 1.1 }}>{event.title}</h1>
-          <div style={{ marginTop: '10px', color: '#ccc', fontSize: '0.9rem', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <div className="flex-gap" style={{ flexWrap: 'nowrap', alignItems: 'center', gap: '8px' }}>
-                  {event.event_date && (
-                      <span className="flex-gap" style={{background:'rgba(255,255,255,0.1)', padding:'5px 10px', borderRadius:'8px', whiteSpace: 'nowrap'}}>
-                          <Calendar size={16}/> {new Date(event.event_date).toLocaleString([], {weekday:'short', month:'numeric', day:'numeric', hour:'numeric', minute:'2-digit'})}
-                      </span>
-                  )}
-                  <button
-                    onClick={() => setShowAttendees(prev => !prev)}
-                    style={{ background: showAttendees ? 'rgba(0,229,255,0.2)' : 'rgba(255,255,255,0.08)', color: showAttendees ? '#00E5FF' : 'white', padding: '6px 10px', borderRadius: '999px', display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: 600, whiteSpace: 'nowrap' }}
-                    aria-pressed={showAttendees}
-                  >
-                    <Users size={16} /> {showAttendees ? 'Hide Guests' : 'Guests'}
-                  </button>
+    <div className="min-h-screen w-full text-white">
+      <div className="px-6 pt-6 pb-6 bg-gradient-to-b from-slate-950 via-slate-900 to-black">
+        <div className="flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => navigate('/')}
+            className="bg-white/10 text-white px-3 py-2 rounded-lg"
+          >
+            Back
+          </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowMoreMenu(!showMoreMenu)}
+              className="bg-white/10 text-white p-2 rounded-full"
+              title="More options"
+            >
+              <MoreHorizontal size={18} />
+            </button>
+            {showMoreMenu && (
+              <>
+              <div className="fixed inset-0 z-40" onClick={() => setShowMoreMenu(false)} />
+              <div className="absolute right-0 top-full mt-2 w-48 bg-slate-900 border border-white/10 rounded-xl shadow-xl z-50 overflow-hidden flex flex-col">
+                <button
+                  onClick={() => { setIsEditing(true); setShowMoreMenu(false) }}
+                  className="text-left px-4 py-3 hover:bg-white/5 flex items-center gap-2 text-sm font-semibold"
+                >
+                  <Edit size={16} /> Edit Event
+                </button>
+                <button
+                  onClick={() => { handleLeaveEvent(); setShowMoreMenu(false) }}
+                  className="text-left px-4 py-3 hover:bg-white/5 flex items-center gap-2 text-sm font-semibold"
+                >
+                  <LogOut size={16} /> Leave Event
+                </button>
+                <button
+                  onClick={() => { setShowDeleteConfirm(true); setShowMoreMenu(false) }}
+                  className="text-left px-4 py-3 hover:bg-red-500/10 text-red-400 flex items-center gap-2 text-sm font-semibold"
+                >
+                  <Trash2 size={16} /> Delete Event
+                </button>
               </div>
-              {event.location_address && (
-                  <span className="flex-gap maps-link" onClick={openMaps} style={{background:'rgba(0, 229, 255, 0.1)', color: '#00E5FF', padding:'5px 10px', borderRadius:'8px', cursor: 'pointer', width: 'fit-content', maxWidth: 'min(100%, 360px)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '6px', alignSelf: 'flex-start'}}>
-                      <MapPin size={16}/> {event.location_address}
-                  </span>
-              )}
+              </>
+            )}
           </div>
         </div>
-        <div className="flex-gap" style={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          {canEditEvent && (
-            <button
-              onClick={() => (showEditEvent ? setShowEditEvent(false) : startEditEvent())}
-              style={{ background: showEditEvent ? 'rgba(0,229,255,0.2)' : 'rgba(255,255,255,0.08)', color: showEditEvent ? '#00E5FF' : 'white', padding: '8px 12px', borderRadius: '999px', fontWeight: 600, whiteSpace: 'nowrap' }}
-            >
-              {showEditEvent ? 'Done' : 'Edit'}
-            </button>
-          )}
-          {userId && (
-            <button
-              onClick={() => (isCreator ? setShowCreatorLeaveConfirm(true) : setShowLeaveConfirm(true))}
-              style={{ background: 'rgba(255,77,109,0.15)', color: '#ff4d6d', padding: '8px 12px', borderRadius: '999px', fontWeight: 600, whiteSpace: 'nowrap' }}
-            >
-              Leave
-            </button>
-          )}
+
+        <div className="mt-6">
+            {isEditing ? (
+              <div className="flex flex-col gap-4">
+                <input
+                  type="text"
+                  value={editedTitle}
+                  onChange={(e) => setEditedTitle(e.target.value)}
+                  placeholder="Event Title"
+                  className="w-full bg-black/30 border border-white/10 text-white p-3 rounded-lg text-3xl font-extrabold tracking-tight"
+                />
+                <button
+                  type="button"
+                  onClick={openDateTimePicker}
+                  className="w-full flex items-center gap-2 bg-black/30 border border-white/10 text-white p-3 rounded-lg text-left"
+                >
+                  <Calendar size={18} className="text-slate-400" />
+                  {editedEventDate ? formatDateTimeLabel(editedEventDate) : 'Set Date & Time'}
+                </button>
+                <input
+                  type="text"
+                  value={editedLocationAddress}
+                  onChange={(e) => setEditedLocationAddress(e.target.value)}
+                  placeholder="Location Address"
+                  className="w-full bg-black/30 border border-white/10 text-white p-3 rounded-lg"
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSaveEdit}
+                    className="flex-1 bg-rose-600 text-white px-4 py-2 rounded-lg hover:bg-rose-700"
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCancelEdit}
+                    className="flex-1 bg-white/10 text-white px-4 py-2 rounded-lg hover:bg-white/20"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
+                  {event.title || 'Untitled event'}
+                </h1>
+                <div className="mt-3 flex flex-col gap-2 text-slate-300">
+                  {event.event_date && (
+                    <div className="flex items-center gap-2">
+                      <Calendar size={16} className="text-blue-400" />
+                      <span>{formatDateTime(event.event_date)}</span>
+                    </div>
+                  )}
+                  {event.location_address && (
+                    <div 
+                      onClick={() => setShowMapOptions(true)}
+                      className="flex items-center gap-2 cursor-pointer w-fit"
+                      role="button"
+                    >
+                      <MapPin size={16} className="text-blue-400" />
+                      <span className="text-blue-400 underline decoration-blue-400/30 underline-offset-4 hover:text-blue-300 transition-colors">{event.location_address}</span>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
         </div>
       </div>
-      {showEventGuide && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 2600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '18px', background: 'rgba(8,11,24,0.75)', backdropFilter: 'blur(6px)' }}>
-          <div
-            style={{
-              position: 'relative',
-              width: '100%',
-              maxWidth: '540px',
-              padding: '18px',
-              borderRadius: '18px',
-              border: '1px solid rgba(0,229,255,0.22)',
-              background: 'linear-gradient(180deg, rgba(0,229,255,0.08) 0%, rgba(9,16,35,0.72) 60%, rgba(9,16,35,0.88) 100%)',
-              textAlign: 'center',
-              boxShadow: '0 20px 50px rgba(0,0,0,0.35)',
-              overflow: 'visible'
-            }}
+
+
+
+      <div className="px-6 mt-4">
+        <div className="grid gap-4 grid-cols-1">
+          <button
+            type="button"
+            onClick={() => navigate(`/room/${code}/nominate`)}
+            className="text-left rounded-3xl border border-rose-500 bg-gradient-to-br from-rose-600/40 via-rose-600/20 to-transparent p-5 hover:from-rose-600/50"
           >
+            <div className="flex items-center gap-3 w-full">
+              <Film size={22} className="text-rose-300" />
+              <div>
+                <div className="text-lg font-bold">Nominate</div>
+                <div className="text-sm text-rose-200">{nominateStatus}</div>
+              </div>
+              <ChevronRight className="ml-auto text-rose-300/50" size={24} />
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => navigate(`/room/${code}/vote`)}
+            className="text-left rounded-3xl border border-indigo-500 bg-gradient-to-br from-indigo-600/40 via-indigo-600/20 to-transparent p-5 hover:from-indigo-600/50"
+          >
+            <div className="flex items-center gap-3 w-full">
+              <ThumbsUp size={22} className="text-indigo-300" />
+              <div>
+                <div className="text-lg font-bold">Vote</div>
+                <div className="text-sm text-indigo-200">{voteStatus}</div>
+              </div>
+              <ChevronRight className="ml-auto text-indigo-300/50" size={24} />
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => navigate(`/room/${code}/reveal`)}
+            className="text-left rounded-3xl border border-amber-400 bg-gradient-to-br from-amber-500/40 via-amber-500/20 to-transparent p-5 hover:from-amber-500/50"
+          >
+            <div className="flex items-center gap-3 w-full">
+              <PlayCircle size={22} className="text-amber-300" />
+              <div>
+                <div className="text-lg font-bold">Reveal</div>
+                <div className="text-sm text-amber-200">{revealStatus}</div>
+              </div>
+              <ChevronRight className="ml-auto text-amber-300/50" size={24} />
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <div className="px-6 mt-4"> {/* Adjusted mt-6 to mt-8 */}
+        <div className="">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-sm uppercase tracking-wide text-slate-400">The Audience</div>
+            <div className="flex items-center gap-2 text-xs text-slate-400">
+              <Users size={14} />
+              {attendeesLoading ? '...' : attendees.length}
+            </div>
+          </div>
+          <div className="relative">
+          <div className="flex gap-3 overflow-x-auto pb-2 pr-12 scrollbar-hide">
             <button
               type="button"
-              onClick={() => {
-                localStorage.setItem('eventGuideDismissed', 'true')
-                setShowEventGuide(false)
-              }}
-              style={{
-                position: 'absolute',
-                top: '12px',
-                right: '12px',
-                background: 'rgba(0,229,255,0.28)',
-                color: '#00E5FF',
-                borderRadius: '999px',
-                width: '36px',
-                height: '36px',
-                padding: 0,
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 6px 16px rgba(0,229,255,0.2)'
-              }}
-              aria-label="Close event guide"
-              title="Dismiss"
+              onClick={() => setShowAddAudience(true)}
+              className="shrink-0 w-12 h-12 rounded-full border border-dashed border-white/30 flex items-center justify-center text-white/80 hover:bg-white/10"
+              title="Add audience"
             >
-              <X size={18} />
+              <Plus size={18} />
             </button>
-            <div style={{ fontWeight: 800, fontSize: '1.2rem', marginBottom: '6px', color: '#e2e8f0' }}>
-              Welcome to Popcorn & Picks!
-            </div>
-            <div className="text-sm" style={{ color: '#cbd5e1', maxWidth: '420px', margin: '0 auto' }}>
-              Let’s pick the best movie for everyone. Here’s how it works:
-            </div>
-
-            <div style={{ marginTop: '18px', display: 'grid', gap: '14px', textAlign: 'left' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '52px 1fr', gap: '12px', alignItems: 'start' }}>
-                <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'rgba(0,229,255,0.14)', border: '1px solid rgba(0,229,255,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Users size={20} color="#00E5FF" />
-                </div>
-                <div>
-                  <div style={{ fontWeight: 700, color: '#e2e8f0' }}>1. Invite Friends</div>
-                  <div className="text-sm" style={{ color: '#94a3b8' }}>
-                    Share the link so friends can join the event.
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '52px 1fr', gap: '12px', alignItems: 'start' }}>
-                <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'rgba(0,229,255,0.14)', border: '1px solid rgba(0,229,255,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Search size={20} color="#00E5FF" />
-                </div>
-                <div>
-                  <div style={{ fontWeight: 700, color: '#e2e8f0' }}>2. Nominate Movies</div>
-                  <div className="text-sm" style={{ color: '#94a3b8' }}>
-                    Search and add options to the voting ballot.
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '52px 1fr', gap: '12px', alignItems: 'start' }}>
-                <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'rgba(0,229,255,0.14)', border: '1px solid rgba(0,229,255,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <ThumbsUp size={20} color="#00E5FF" />
-                </div>
-                <div>
-                  <div style={{ fontWeight: 700, color: '#e2e8f0' }}>3. Vote</div>
-                  <div className="text-sm" style={{ color: '#94a3b8' }}>
-                    Use <span style={{ color: '#FF4D9A', fontWeight: 700 }}>Superlike</span> for movies you really want to watch.
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '52px 1fr', gap: '12px', alignItems: 'start' }}>
-                <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'rgba(255,215,0,0.14)', border: '1px solid rgba(255,215,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <PlayCircle size={20} color="#ffd700" />
-                </div>
-                <div>
-                  <div style={{ fontWeight: 700, color: '#e2e8f0' }}>4. Select & Watch</div>
-                  <div className="text-sm" style={{ color: '#94a3b8' }}>
-                    Your votes help determine what movie gets selected!
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                localStorage.setItem('eventGuideDismissed', 'true')
-                setShowEventGuide(false)
-              }}
-              style={{
-                marginTop: '18px',
-                width: '100%',
-                background: '#00E5FF',
-                color: 'black',
-                padding: '12px 16px',
-                borderRadius: '999px',
-                fontWeight: 700
-              }}
-            >
-              Let’s Start
-            </button>
-          </div>
-        </div>
-      )}
-
-      {showEditEvent && (
-        <div className="glass-panel" style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <input placeholder="Event Title" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
-          <button
-            onClick={openDateTimePicker}
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.08)', color: 'white', padding: '12px', borderRadius: '12px', justifyContent: 'center' }}
-          >
-            <Calendar size={16} />
-            <Clock size={16} />
-            {formatDateTimeLabel(editDate)}
-          </button>
-          <input placeholder="Location(Optional)" value={editLocation} onChange={(e) => setEditLocation(e.target.value)} />
-          <button
-            onClick={handleUpdateEvent}
-            disabled={savingEvent}
-            style={{ background: '#00E5FF', color: 'black', padding: '12px', borderRadius: '999px', fontWeight: 700 }}
-          >
-            {savingEvent ? 'Saving...' : 'Save Changes'}
-          </button>
-          {isCreator && (
-            <button
-              onClick={() => setShowDeleteConfirm(true)}
-              style={{ background: 'rgba(255,77,109,0.15)', color: '#ff4d6d', padding: '10px', borderRadius: '999px', fontWeight: 700 }}
-            >
-              Delete Event
-            </button>
-          )}
-        </div>
-      )}
-
-      {showAttendees && (
-        <div className="glass-panel" style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <div style={{ fontWeight: 700 }}>Event Guests</div>
-          {eventAttendees.length === 0 ? (
-            <p className="text-sm">No attendees yet.</p>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {eventAttendees.map(attendee => {
-                const name = attendee.profiles?.display_name || attendee.profiles?.username || 'Unknown'
-                const isCreator = attendee.user_id === event.created_by
-                return (
-                  <div key={attendee.user_id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.06)', padding: '10px 12px', borderRadius: '12px' }}>
-                    <span style={{ fontWeight: 600 }}>{name}</span>
-                    {isCreator && (
-                      <span style={{ background: 'rgba(0,229,255,0.15)', color: '#00E5FF', padding: '2px 8px', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 700 }}>
-                        Creator
-                      </span>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      <div style={{ height: '1px', background: 'rgba(255,255,255,0.08)', margin: '16px 0' }} />
-
-      {!isWatching && (
-        <div style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <div className="flex-between" style={{ flexWrap: 'wrap', gap: '10px' }}>
-            <div className="flex-gap" style={{ flexWrap: 'wrap', justifyContent: 'center', width: '100%' }}>
-              {event.group_id === null && userId && event.created_by === userId && (
-                <button onClick={() => setShowAddCrew(!showAddCrew)} style={{ background: showAddCrew ? '#00E5FF' : 'rgba(255,255,255,0.1)', color: showAddCrew ? 'black' : 'white', padding: '10px', borderRadius: '50%' }}>
-                  <Users size={18} />
-                </button>
-              )}
-              <button
-                onClick={() => (groupShareCode ? setShowInvite(true) : handleCopyInvite())}
-                style={{ background: 'rgba(255,255,255,0.1)', color: 'white', padding: '10px 14px', borderRadius: '999px', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}
-              >
-                {inviteCopied ? <Check size={18} /> : <LinkIcon size={18} />}
-                {inviteCopied ? 'Copied' : 'Invite'}
-              </button>
-              <button onClick={() => setShowSearch(true)} style={{ background: 'var(--primary)', color: 'white', padding: '10px 16px', borderRadius: '20px', display: 'flex', gap: '6px', alignItems: 'center' }}>
-                <Plus size={18} /> Nominate
-              </button>
-              <button
-                onClick={() => (hasNominations ? setShowResultsView(true) : setShowNoNominationsNotice(true))}
-                aria-disabled={!hasNominations}
-                style={{
-                  background: hasNominations ? '#ffd700' : 'rgba(255,255,255,0.08)',
-                  color: hasNominations ? 'black' : '#94a3b8',
-                  padding: '10px 14px',
-                  borderRadius: '999px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  fontWeight: 700,
-                  cursor: hasNominations ? 'pointer' : 'not-allowed'
-                }}
-                title={hasNominations ? 'Select a movie' : 'Add nominations first'}
-              >
-                <Film size={18} /> Select
-              </button>
-            </div>
-          </div>
-
-          <div style={{ height: '1px', background: 'rgba(255,255,255,0.08)', margin: '4px 0' }} />
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-              <span className="text-sm" style={{ fontWeight: 'bold', letterSpacing: '1px' }}>BALLOT ({myNominations.length + crewNominations.length})</span>
-              {!isWatching && (myNominations.length > 0 || crewNominations.length > 0) && (
-                <button
-                  onClick={() => setBallotFilter('all')}
-                  style={{ background: ballotFilter === 'all' ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.08)', color: 'white', padding: '8px 12px', borderRadius: '999px', fontWeight: 600, whiteSpace: 'nowrap' }}
+            {attendeesLoading ? (
+              <div className="text-sm text-slate-400">Loading attendees...</div>
+            ) : attendees.length === 0 ? (
+              <div className="text-sm text-slate-400">No attendees yet.</div>
+            ) : (
+              attendees.map((person) => (
+                <button 
+                  key={person.id} 
+                  onClick={() => handleAttendeeClick(person)}
+                  className="shrink-0 w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold hover:bg-slate-700 transition-colors"
                 >
-                  All
+                  {initialsFor(person.name)}
                 </button>
-              )}
-            </div>
-            {!isWatching && (myNominations.length > 0 || crewNominations.length > 0) && (
-              <div className="flex-gap" style={{ flexWrap: 'wrap', justifyContent: 'flex-start' }}>
-                <button
-                  onClick={() => setBallotFilter('missing')}
-                  style={{ background: ballotFilter === 'missing' ? 'rgba(0,229,255,0.25)' : 'rgba(255,255,255,0.08)', color: ballotFilter === 'missing' ? '#00E5FF' : 'white', padding: '8px 12px', borderRadius: '999px', fontWeight: 600 }}
-                >
-                  Missing My Vote{totalMissingVotes > 0 ? ` (${totalMissingVotes})` : ''}
-                </button>
-                <button
-                  onClick={() => setBallotFilter('favorite')}
-                  style={{ background: ballotFilter === 'favorite' ? 'rgba(255,77,154,0.22)' : 'rgba(255,255,255,0.08)', color: ballotFilter === 'favorite' ? '#FF4D9A' : 'white', padding: '8px 12px', borderRadius: '999px', fontWeight: 600 }}
-                >
-                  Superlikes{totalFavorites > 0 ? ` (${totalFavorites})` : ''}
-                </button>
-                <button
-                  onClick={() => setBallotFilter('disliked')}
-                  style={{ background: ballotFilter === 'disliked' ? 'rgba(255,77,109,0.22)' : 'rgba(255,255,255,0.08)', color: ballotFilter === 'disliked' ? '#FF4D6D' : 'white', padding: '8px 12px', borderRadius: '999px', fontWeight: 600 }}
-                >
-                  Dislikes{totalDisliked > 0 ? ` (${totalDisliked})` : ''}
-                </button>
-              </div>
+              ))
             )}
           </div>
-        </div>
-      )}
-
-      {isWatching && selectedDisplayMovie && (
-        <div style={{ marginBottom: '20px' }}>
-          <div className="flex-between" style={{ marginBottom: '10px' }}>
-            <span className="text-sm" style={{ fontWeight: 'bold', letterSpacing: '1px' }}>NOW SHOWING</span>
-            <button onClick={() => setShowResultsView(true)} style={{ background: 'rgba(255,255,255,0.1)', color: 'white', padding: '8px 12px', borderRadius: '999px', display: 'flex', gap: '6px', alignItems: 'center' }}>
-              <Film size={16} /> Select
-            </button>
+          <div className="pointer-events-none absolute right-0 top-0 bottom-2 w-16 bg-gradient-to-l from-black to-transparent" />
           </div>
-          <MovieCard
-            movie={selectedDisplayMovie}
-            meta={
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <span style={{ color: '#00E5FF', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Star size={14} /> Winner
-                </span>
-                {renderTheaterDetails(selectedNomination)}
+        </div>
+      </div>
+
+
+
+      <div className="px-6 py-6">
+        <div
+          onClick={handleCopyInvite}
+          className="relative w-full flex rounded-3xl overflow-hidden cursor-pointer shadow-2xl group bg-gradient-to-br from-slate-800 to-slate-900 border border-white/10"
+        >
+          {/* Main Ticket Body (Left) */}
+          <div className="flex-1 p-4 flex flex-col justify-center border-r-2 border-dashed border-white/10 relative overflow-hidden">
+            <div className="relative z-10">
+              <div className="text-2xl font-black tracking-[0.15em] text-white/90 leading-none">ADMIT ONE</div>
+              <div className="flex items-center gap-3 mt-2">
+                {event?.event_date && <div className="text-[10px] text-slate-400 font-mono">{formatDateTime(event.event_date)}</div>}
               </div>
-            }
-          >
-            {selectedMovie && (
-              <button onClick={() => setShowRateMovie(true)} style={{ background: '#00E5FF', color: 'black', padding: '12px', borderRadius: '12px', fontWeight: 700, width: '100%' }}>
-                Rate Movie
-              </button>
-            )}
-          </MovieCard>
-          <button onClick={handleChangeMovie} style={{ marginTop: '6px', background: 'none', border: 'none', color: '#888', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
-            <RotateCcw size={14} /> Change Movie
-          </button>
-        </div>
-      )}
-
-      {showAddCrew && (
-        <div className="glass-panel" style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <div style={{ fontWeight: 700 }}>Add a Crew to this Event</div>
-          {myGroups.length === 0 ? (
-            <p className="text-sm">Join or create a crew first.</p>
-          ) : (
-            <>
-              <select value={selectedCrewId} onChange={(e) => setSelectedCrewId(e.target.value)}>
-                <option value="">Select a Crew</option>
-                {myGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-              </select>
-              <button
-                onClick={handleAddCrew}
-                style={{
-                  background: '#00E5FF',
-                  color: 'black',
-                  width: '100%',
-                  padding: '12px',
-                  borderRadius: '999px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontWeight: 700
-                }}
-              >
-                + Add Crew
-              </button>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* EMPTY STATE */}
-      {!isWatching && myNominations.length === 0 && crewNominations.length === 0 && (
-        <div style={{ textAlign: 'center', marginTop: '60px', color: '#666' }}>
-          <Film size={48} style={{opacity:0.2, marginBottom:'10px'}}/>
-          <p>No nominations yet.</p>
-          <p className="text-sm">Be the first to suggest a movie!</p>
-        </div>
-      )}
-
-      {!isWatching && ballotFilter === 'missing' && totalMissingVotes === 0 && (myNominations.length > 0 || crewNominations.length > 0) && (
-        <div style={{ textAlign: 'center', marginTop: '30px', color: '#8a8a8a' }}>
-          <p style={{ marginBottom: '4px' }}>You are all caught up.</p>
-          <p className="text-sm">No missing votes right now.</p>
-        </div>
-      )}
-
-      {!isWatching && (ballotFilter === 'disliked' || ballotFilter === 'favorite') && filteredMyNominations.length + filteredCrewNominations.length === 0 && (myNominations.length > 0 || crewNominations.length > 0) && (
-        <div style={{ textAlign: 'center', marginTop: '30px', color: '#8a8a8a' }}>
-          <p style={{ marginBottom: '4px' }}>Nothing here yet.</p>
-          <p className="text-sm">Try voting on the ballot first.</p>
-        </div>
-      )}
-      {/* MY NOMINATIONS */}
-      {!isWatching && filteredMyNominations.length > 0 && (
-          <div style={{marginBottom: '30px'}}>
-              <button
-                onClick={() => setShowMyNominations(!showMyNominations)}
-                style={{ width: '100%', background: 'none', border: 'none', color: '#00E5FF', marginBottom: '10px', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
-              >
-                {showMyNominations ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                <span className="text-sm" style={{ letterSpacing: '1px' }}>MY NOMINATIONS ({filteredMyNominations.length})</span>
-              </button>
-              {showMyNominations && filteredMyNominations.map(item => (
-                <NominationCard
-                  key={item.id}
-                  item={item}
-                  myVotes={myVotes}
-                  handleVote={handleVote}
-                  canRemove
-                  onRemove={requestRemoveNomination}
-                />
-              ))}
+            </div>
+            <div className="absolute -bottom-3 -right-2 text-6xl font-black text-white/5 -rotate-12 pointer-events-none select-none">
+              MOVIE
+            </div>
           </div>
-      )}
-
-      {/* CREW NOMINATIONS */}
-      {!isWatching && filteredCrewNominations.length > 0 && (
-          <div>
-              <button
-                onClick={() => setShowCrewNominations(!showCrewNominations)}
-                style={{ width: '100%', background: 'none', border: 'none', color: 'var(--primary)', marginBottom: '10px', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
-              >
-                {showCrewNominations ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                <span className="text-sm" style={{ letterSpacing: '1px' }}>CREW PICKS ({filteredCrewNominations.length})</span>
-              </button>
-              {showCrewNominations && filteredCrewNominations.map(item => (
-                <NominationCard
-                  key={item.id}
-                  item={item}
-                  myVotes={myVotes}
-                  handleVote={handleVote}
-                />
-              ))}
+          {/* Perforated Tear-off Section (Right) */}
+          <div className="relative w-20 flex flex-col items-center justify-center gap-1 bg-black/20">
+            {copied ? <Check size={20} className="text-green-400" /> : <LinkIcon size={20} className="text-slate-400" />}
+            <div className="text-[10px] uppercase tracking-wider font-bold text-slate-500">
+              {copied ? 'Copied' : 'Invite'}
+            </div>
           </div>
-      )}
+        </div>
+      </div>
 
-      {/* MODALS */}
-      {showResultsView && (
-        <ResultsView
-          eventId={code}
-          onClose={() => setShowResultsView(false)}
-          onSelected={handleSelectedNomination}
-        />
-      )}
-      {showRateMovie && selectedMovie && (
-        <RateMovie
-          eventId={code}
-          movie={selectedMovie}
-          onClose={() => setShowRateMovie(false)}
-        />
-      )}
-      <AnimatePresence>
-        {showSearch && <SearchMovies eventId={code} groupId={event.group_id} onClose={() => setShowSearch(false)} onNominate={handleAddNomination} />}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {showNoNominationsNotice && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            style={{ position: 'fixed', inset: 0, zIndex: 2150, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(5px)' }}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.96, opacity: 0 }}
-              transition={{ type: 'spring', damping: 20, stiffness: 300 }}
-              style={{ width: '90%', maxWidth: '420px', background: '#1a1a2e', borderRadius: '20px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px', textAlign: 'center' }}
-            >
-              <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>No nominations yet</div>
-              <p className="text-sm" style={{ color: '#bbb', margin: 0 }}>
-                You can’t select a movie until one has been nominated.
-              </p>
+      {showAddAudience && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 backdrop-blur-sm">
+          <div className="w-full max-w-lg bg-slate-900 border-t border-white/10 rounded-t-3xl p-5">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-lg font-bold">Add Audience</div>
               <button
-                onClick={() => setShowNoNominationsNotice(false)}
-                style={{ background: 'var(--primary)', color: 'white', padding: '10px', borderRadius: '12px', fontWeight: 700 }}
+                type="button"
+                onClick={() => setShowAddAudience(false)}
+                className="text-sm text-slate-300"
               >
-                Got it
+                Close
               </button>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            </div>
+            <input
+              placeholder="Search users by name or handle"
+              className="w-full bg-black/30 border border-white/10 text-white p-3 rounded-lg"
+            />
+            <div className="mt-4 text-sm text-slate-400">
+              Recent crew and search results will appear here.
+            </div>
+          </div>
+        </div>
+      )}
 
-      <AnimatePresence>
-        {showInvite && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(5px)' }}
-          >
-            <motion.div
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              style={{ width: '100%', maxWidth: '500px', height: '45vh', background: '#1a1a2e', borderTopLeftRadius: '24px', borderTopRightRadius: '24px', padding: '20px', display: 'flex', flexDirection: 'column' }}
-            >
-              <div className="flex-between" style={{ marginBottom: '20px' }}>
-                <h2 style={{ margin: 0 }}>Invite to Event</h2>
-                <button
-                  onClick={() => setShowInvite(false)}
-                  style={{
-                    background: '#333',
-                    width: '36px',
-                    height: '36px',
-                    padding: 0,
-                    borderRadius: '999px',
-                    color: 'white',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0
-                  }}
-                >
-                  <X size={20} />
-                </button>
-              </div>
-
-              {groupShareCode && (
-                <div style={{ background: 'rgba(255,255,255,0.05)', padding: '16px', borderRadius: '14px', marginBottom: '16px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      <span style={{ fontWeight: 700, fontSize: '1rem' }}>Add to crew too</span>
-                      <span className="text-sm" style={{ lineHeight: '1.4' }}>
-                        {inviteAddToGroup ? "They'll join the crew and land on this event." : "They'll land on this event without joining the crew."}
-                      </span>
-                    </div>
-                    <input className="toggle" type="checkbox" checked={inviteAddToGroup} onChange={(e) => setInviteAddToGroup(e.target.checked)} />
-                  </div>
-                </div>
-              )}
-
-              <button onClick={() => handleCopyInvite({ closeAfter: true })} style={{ background: '#00E5FF', color: 'black', padding: '12px', borderRadius: '12px', fontWeight: 700 }}>
-                {inviteCopied ? <span style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}><Check size={16}/> Copied</span> : 'Copy Invite Link'}
-              </button>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {showDeleteConfirm && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            style={{ position: 'fixed', inset: 0, zIndex: 2200, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(5px)' }}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.96, opacity: 0 }}
-              transition={{ type: 'spring', damping: 20, stiffness: 300 }}
-              style={{ width: '90%', maxWidth: '420px', background: '#1a1a2e', borderRadius: '20px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}
-            >
-              <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>Delete this event?</div>
-              <p className="text-sm" style={{ color: '#bbb', margin: 0 }}>This will remove the event and its nominations.</p>
-              <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
-                <button onClick={() => setShowDeleteConfirm(false)} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', color: 'white', padding: '10px', borderRadius: '12px', fontWeight: 700 }}>
-                  Cancel
-                </button>
-                <button onClick={handleDeleteEvent} style={{ flex: 1, background: '#ff4d6d', color: 'white', padding: '10px', borderRadius: '12px', fontWeight: 700 }}>
-                  Delete
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {showRemoveNominationConfirm && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            style={{ position: 'fixed', inset: 0, zIndex: 2200, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(5px)' }}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.96, opacity: 0 }}
-              transition={{ type: 'spring', damping: 20, stiffness: 300 }}
-              style={{ width: '90%', maxWidth: '420px', background: '#1a1a2e', borderRadius: '20px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}
-            >
-              <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>Remove this nomination?</div>
-              <p className="text-sm" style={{ color: '#bbb', margin: 0 }}>
-                This removes the nomination for everyone and clears all votes on it.
-              </p>
-              <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
-                <button
-                  onClick={() => {
-                    setShowRemoveNominationConfirm(false)
-                    setPendingRemoval(null)
-                  }}
-                  style={{ flex: 1, background: 'rgba(255,255,255,0.08)', color: 'white', padding: '10px', borderRadius: '12px', fontWeight: 700 }}
-                >
-                  Cancel
-                </button>
-                <button onClick={confirmRemoveNomination} style={{ flex: 1, background: '#ff4d6d', color: 'white', padding: '10px', borderRadius: '12px', fontWeight: 700 }}>
-                  Remove
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {showLeaveConfirm && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            style={{ position: 'fixed', inset: 0, zIndex: 2200, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(5px)' }}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.96, opacity: 0 }}
-              transition={{ type: 'spring', damping: 20, stiffness: 300 }}
-              style={{ width: '90%', maxWidth: '420px', background: '#1a1a2e', borderRadius: '20px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}
-            >
-              <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>Leave this event?</div>
-              <p className="text-sm" style={{ color: '#bbb', margin: 0 }}>
-                This removes you from the guest list and clears your nominations for this event.
-              </p>
-              <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
-                <button onClick={() => setShowLeaveConfirm(false)} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', color: 'white', padding: '10px', borderRadius: '12px', fontWeight: 700 }}>
-                  Cancel
-                </button>
-                <button onClick={handleLeaveEvent} style={{ flex: 1, background: '#ff4d6d', color: 'white', padding: '10px', borderRadius: '12px', fontWeight: 700 }} disabled={leavingEvent}>
-                  {leavingEvent ? 'Leaving...' : 'Leave Event'}
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {showCreatorLeaveConfirm && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            style={{ position: 'fixed', inset: 0, zIndex: 2200, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(5px)' }}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.96, opacity: 0 }}
-              transition={{ type: 'spring', damping: 20, stiffness: 300 }}
-              style={{ width: '90%', maxWidth: '420px', background: '#1a1a2e', borderRadius: '20px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}
-            >
-              <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>You created this event</div>
-              <p className="text-sm" style={{ color: '#bbb', margin: 0 }}>
-                Leaving will delete the event for everyone and remove all nominations.
-              </p>
-              <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
-                <button onClick={() => setShowCreatorLeaveConfirm(false)} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', color: 'white', padding: '10px', borderRadius: '12px', fontWeight: 700 }}>
-                  Cancel
-                </button>
-                <button
-                  onClick={() => {
-                    setShowCreatorLeaveConfirm(false)
-                    handleDeleteEvent()
-                  }}
-                  style={{ flex: 1, background: '#ff4d6d', color: 'white', padding: '10px', borderRadius: '12px', fontWeight: 700 }}
-                >
-                  Delete Event
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {showMapChoice && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            style={{ position: 'fixed', inset: 0, zIndex: 2150, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(5px)' }}
-          >
-            <motion.div
-              initial={{ scale: 0.96, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.96, opacity: 0 }}
-              transition={{ type: 'spring', damping: 20, stiffness: 300 }}
-              style={{ width: '90%', maxWidth: '420px', background: '#1a1a2e', borderRadius: '20px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}
-            >
-              <div style={{ fontWeight: 700, fontSize: '1.05rem' }}>Open location in</div>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button
-                  onClick={() => {
-                    const query = encodeURIComponent(mapQuery)
-                    window.open(`https://maps.apple.com/?q=${query}`, '_blank')
-                    setShowMapChoice(false)
-                  }}
-                  style={{ flex: 1, background: 'rgba(255,255,255,0.08)', color: 'white', padding: '10px', borderRadius: '12px', fontWeight: 700 }}
-                >
-                  Apple Maps
-                </button>
-                <button
-                  onClick={() => {
-                    const query = encodeURIComponent(mapQuery)
-                    window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank')
-                    setShowMapChoice(false)
-                  }}
-                  style={{ flex: 1, background: '#00E5FF', color: 'black', padding: '10px', borderRadius: '12px', fontWeight: 700 }}
-                >
-                  Google Maps
-                </button>
-              </div>
-              <button onClick={() => setShowMapChoice(false)} style={{ background: 'transparent', color: '#9ca3af', padding: '6px', fontWeight: 600 }}>
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 max-w-sm w-full">
+            <div className="flex items-center gap-3 text-red-400 mb-4">
+              <AlertTriangle size={24} />
+              <h3 className="text-lg font-bold m-0">Delete Event?</h3>
+            </div>
+            <p className="text-slate-300 mb-6 leading-relaxed">
+              This will permanently delete the event for everyone. This action cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="flex-1 bg-white/10 py-3 rounded-xl font-semibold hover:bg-white/20"
+              >
                 Cancel
               </button>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+              <button
+                onClick={handleDeleteEvent}
+                disabled={isDeleting}
+                className="flex-1 bg-red-500 text-white py-3 rounded-xl font-semibold hover:bg-red-600 disabled:opacity-50"
+              >
+                {isDeleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showMapOptions && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={() => setShowMapOptions(false)}>
+          <div className="bg-slate-900 border border-white/10 rounded-2xl p-4 w-full max-w-xs flex flex-col gap-3" onClick={e => e.stopPropagation()}>
+            <div className="text-lg font-bold text-center mb-1 text-white">Open Maps</div>
+            <button onClick={() => openMaps('apple')} className="bg-white/10 text-white p-3 rounded-xl font-semibold hover:bg-white/20">Apple Maps</button>
+            <button onClick={() => openMaps('google')} className="bg-white/10 text-white p-3 rounded-xl font-semibold hover:bg-white/20">Google Maps</button>
+            <button onClick={() => setShowMapOptions(false)} className="p-2 text-slate-400 text-sm hover:text-white">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {selectedAttendee && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={() => setSelectedAttendee(null)}>
+          <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 w-full max-w-xs flex flex-col items-center gap-4 relative" onClick={e => e.stopPropagation()}>
+            <button 
+              onClick={() => setSelectedAttendee(null)}
+              className="absolute top-3 right-3 text-slate-400 hover:text-white"
+            >
+              <X size={20} />
+            </button>
+            
+            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-2xl font-bold shadow-lg">
+              {initialsFor(selectedAttendee.name)}
+            </div>
+            
+            <div className="text-center">
+              <h3 className="text-xl font-bold">{selectedAttendee.name}</h3>
+              <p className="text-slate-400 text-sm mt-1">
+                {loadingSharedEvents ? 'Checking history...' : `Shared Events: ${sharedEventCount}`}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <DateTimePickerSheet
         show={showDateTimePicker}
@@ -1295,261 +669,4 @@ export default function EventView() {
       />
     </div>
   )
-}
-
-function DateTimePickerSheet({
-  show,
-  onClose,
-  displayMonth,
-  setDisplayMonth,
-  pickedDate,
-  setPickedDate,
-  pickedTime,
-  setPickedTime,
-  pickedPeriod,
-  setPickedPeriod,
-  onConfirm
-}) {
-  if (!show) return null
-  const days = buildCalendarDays(displayMonth)
-  const monthLabel = displayMonth.toLocaleString([], { month: 'long', year: 'numeric' })
-  const timeSlots = getTimeSlots(30)
-  const today = new Date()
-  const isSameDay = (d1, d2) => d1 && d2 && d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate()
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 2100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(5px)' }}>
-      <div style={{ width: '100%', maxWidth: '500px', height: '80vh', background: '#1a1a2e', borderTopLeftRadius: '24px', borderTopRightRadius: '24px', padding: '20px', display: 'flex', flexDirection: 'column' }}>
-        <div className="flex-between" style={{ marginBottom: '12px' }}>
-          <h2 style={{ margin: 0 }}>Pick Date & Time</h2>
-          <button onClick={onClose} style={{ background: '#333', padding: '8px', borderRadius: '50%', color: 'white' }}>X</button>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-          <button
-            onClick={() => setDisplayMonth(new Date(displayMonth.getFullYear(), displayMonth.getMonth() - 1, 1))}
-            style={{ background: 'rgba(255,255,255,0.1)', color: 'white', padding: '6px 10px', borderRadius: '10px' }}
-          >
-            Prev
-          </button>
-          <div style={{ fontWeight: 700 }}>{monthLabel}</div>
-          <button
-            onClick={() => setDisplayMonth(new Date(displayMonth.getFullYear(), displayMonth.getMonth() + 1, 1))}
-            style={{ background: 'rgba(255,255,255,0.1)', color: 'white', padding: '6px 10px', borderRadius: '10px' }}
-          >
-            Next
-          </button>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px', marginBottom: '10px' }}>
-          {['S','M','T','W','T','F','S'].map(d => (
-            <div key={d} className="text-sm" style={{ textAlign: 'center' }}>{d}</div>
-          ))}
-          {days.map((day, idx) => {
-            if (!day) return <div key={`e-${idx}`} />
-            const dateObj = new Date(displayMonth.getFullYear(), displayMonth.getMonth(), day)
-            const selected = isSameDay(dateObj, pickedDate)
-            const isToday = isSameDay(dateObj, today)
-            return (
-              <button
-                key={`${displayMonth.getMonth()}-${day}`}
-                onClick={() => setPickedDate(dateObj)}
-                style={{
-                  padding: '8px 0',
-                  borderRadius: '10px',
-                  background: selected ? '#00E5FF' : 'rgba(255,255,255,0.08)',
-                  color: selected ? 'black' : 'white',
-                  border: isToday && !selected ? '1px solid #00E5FF' : 'none'
-                }}
-              >
-                {day}
-              </button>
-            )
-          })}
-        </div>
-
-        <div style={{ marginTop: '8px', marginBottom: '10px', fontWeight: 600 }}>Time</div>
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
-          <button
-            onClick={() => setPickedPeriod('AM')}
-            style={{
-              flex: 1,
-              padding: '8px',
-              borderRadius: '12px',
-              background: pickedPeriod === 'AM' ? '#00E5FF' : 'rgba(255,255,255,0.08)',
-              color: pickedPeriod === 'AM' ? 'black' : 'white',
-              fontWeight: 600
-            }}
-          >
-            AM
-          </button>
-          <button
-            onClick={() => setPickedPeriod('PM')}
-            style={{
-              flex: 1,
-              padding: '8px',
-              borderRadius: '12px',
-              background: pickedPeriod === 'PM' ? '#00E5FF' : 'rgba(255,255,255,0.08)',
-              color: pickedPeriod === 'PM' ? 'black' : 'white',
-              fontWeight: 600
-            }}
-          >
-            PM
-          </button>
-        </div>
-        <div style={{ flex: 1, overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-          {timeSlots.map(t => {
-            const candidate = to24Time(t.hour, t.minute, pickedPeriod)
-            const isSelected = pickedTime === candidate
-            return (
-              <button
-                key={t.label}
-                onClick={() => setPickedTime(candidate)}
-                style={{
-                  padding: '10px 0',
-                  borderRadius: '10px',
-                  background: isSelected ? '#00E5FF' : 'rgba(255,255,255,0.08)',
-                  color: isSelected ? 'black' : 'white',
-                  fontWeight: 600
-                }}
-              >
-                {t.label}
-              </button>
-            )
-          })}
-        </div>
-
-        <button onClick={onConfirm} style={{ marginTop: '14px', background: '#00E5FF', color: 'black', padding: '12px', borderRadius: '999px', fontWeight: 700 }}>
-          Confirm Date & Time
-        </button>
-      </div>
-    </div>
-  )
-}
-
-function getTimeSlots(stepMinutes = 30) {
-  const slots = []
-  for (let h = 1; h <= 12; h++) {
-    for (let m = 0; m < 60; m += stepMinutes) {
-      const label = `${h}:${String(m).padStart(2, '0')}`
-      slots.push({ hour: h, minute: m, label })
-    }
-  }
-  return slots
-}
-
-function to24Hour(hour12, period) {
-  if (period === 'AM') return hour12 === 12 ? 0 : hour12
-  return hour12 === 12 ? 12 : hour12 + 12
-}
-
-function to24Time(hour12, minute, period) {
-  const hour24 = to24Hour(hour12, period)
-  return `${String(hour24).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
-}
-
-function buildCalendarDays(monthDate) {
-  const year = monthDate.getFullYear()
-  const month = monthDate.getMonth()
-  const firstDay = new Date(year, month, 1)
-  const startWeekday = firstDay.getDay()
-  const daysInMonth = new Date(year, month + 1, 0).getDate()
-
-  const days = []
-  for (let i = 0; i < startWeekday; i++) days.push(null)
-  for (let d = 1; d <= daysInMonth; d++) days.push(d)
-  return days
-}
-
-function buildNominationDisplay(nomination) {
-  if (!nomination) return null
-  if (nomination.movie) return nomination.movie
-  return {
-    title: null,
-    genre: null,
-    description: null,
-    rt_score: null
-  }
-}
-
-function renderTheaterDetails(nomination) {
-  if (!nomination || nomination.nomination_type !== 'theater') return null
-  const details = []
-  if (nomination.theater_name) details.push(nomination.theater_name)
-  if (nomination.theater_notes) details.push(nomination.theater_notes)
-  if (details.length === 0) return null
-  return (
-    <span className="text-sm" style={{ color: '#fef3c7' }}>
-      {details.join(' | ')}
-    </span>
-  )
-}
-
-// ------------------------------------------------------------------
-// HELPER COMPONENTS (Paste these at the bottom of the file)
-// ------------------------------------------------------------------
-
-function NominationCard({ item, myVotes, handleVote, canRemove = false, onRemove }) {
-  const currentVote = myVotes[item.id]
-  const isTheater = item.nomination_type === 'theater'
-  const displayMovie = buildNominationDisplay(item)
-  
-  return (
-    <div className={isTheater ? 'theater-card' : ''} style={{ borderRadius: '16px', marginBottom: '16px' }}>
-        <MovieCard
-          movie={displayMovie}
-          meta={isTheater ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <span style={{color: 'gold', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '5px'}}><Ticket size={14}/> THEATER TRIP</span>
-              {renderTheaterDetails(item)}
-            </div>
-          ) : null}
-          topRight={canRemove ? (
-            <button
-              onClick={() => onRemove?.(item)}
-              title="Remove nomination"
-              aria-label="Remove nomination"
-              style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#1b0f14', border: '2px solid #ff4d6d', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 6px 14px rgba(0,0,0,0.35)' }}
-            >
-              <X size={16} color="#ff4d6d" />
-            </button>
-          ) : null}
-        >
-            <div style={{ display: 'flex', gap: '8px' }}>
-                <VoteBtn active={currentVote === 2} type="love" onClick={() => handleVote(item.id, 2)} />
-                <VoteBtn active={currentVote === 1} type="up" onClick={() => handleVote(item.id, 1)} />
-                <VoteBtn active={currentVote === -2} type="down" onClick={() => handleVote(item.id, -2)} />
-            </div>
-        </MovieCard>
-    </div>
-  )
-}
-
-function VoteBtn({ active, type, onClick }) {
-    const colors = { down: '#FF4D6D', up: '#00E5FF', love: '#FF4D9A' }
-    const backgrounds = {
-      down: 'rgba(255,77,109,0.18)',
-      up: 'rgba(0,229,255,0.18)',
-      love: 'rgba(255,77,154,0.18)'
-    }
-    const icons = { down: ThumbsDown, up: ThumbsUp, love: Heart }
-    const Icon = icons[type]
-    return (
-        <button
-          onClick={onClick}
-          style={{
-            flex: 1,
-            padding: '12px',
-            borderRadius: '12px',
-            background: active ? backgrounds[type] : 'rgba(255,255,255,0.05)',
-            border: active ? `1px solid ${colors[type]}` : '1px solid rgba(255,255,255,0.08)',
-            color: active ? colors[type] : 'white',
-            opacity: active ? 1 : 0.4,
-            display: 'flex',
-            justifyContent: 'center'
-          }}
-        >
-            <Icon size={20} color={active ? colors[type] : 'white'} fill={active && type === 'love' ? colors[type] : 'none'} />
-        </button>
-    )
 }

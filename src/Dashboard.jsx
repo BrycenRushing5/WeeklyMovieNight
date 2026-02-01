@@ -1,249 +1,242 @@
-import { useState, useEffect, useRef } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
-import { LogOut, Plus, Users, Book, Search, Filter, Calendar, Clock, User, ChevronDown, ChevronUp, X, Minus } from 'lucide-react'
-import { supabase } from './supabaseClient'
-import SearchMovies from './SearchMovies'
-import MovieCard from './MovieCard'
+import { useEffect, useState } from "react"
+import { Link } from "react-router-dom"
+import { supabase } from "./supabaseClient"
+import MovieCard from "./MovieCard"
+import SearchMovies from "./SearchMovies"
+import { AnimatePresence } from "framer-motion"
+import { LogOut, Plus, User } from "lucide-react"
+import DateTimePickerSheet from "./DateTimePickerSheet"
 
-const DEFAULT_GENRES = ['Action', 'Comedy', 'Drama', 'Fantasy', 'Horror', 'Romance', 'Sci-Fi', 'Thriller', 'Family']
-const COMMON_GENRES = ['Action', 'Adventure', 'Comedy', 'Documentary', 'Holiday', 'Horror', 'Romance', 'Sci-Fi', 'Mystery & thriller', 'Fantasy']
-
-export default function Dashboard({ session }) {
-  const [groups, setGroups] = useState([])
-  const [watchlist, setWatchlist] = useState([])
-  const [activeTab, setActiveTab] = useState('events') 
-  const [showSearch, setShowSearch] = useState(false)
-  const [genres, setGenres] = useState(DEFAULT_GENRES)
-  const [showCreateGroup, setShowCreateGroup] = useState(false) // New Modal
-  const [newGroupName, setNewGroupName] = useState('')
-  const [showJoinGroup, setShowJoinGroup] = useState(false)
-  const [joinCode, setJoinCode] = useState('')
+const Dashboard = ({ session }) => {
+  const [activeTab, setActiveTab] = useState("events")
   const [events, setEvents] = useState([])
-  const [groupMemberPreview, setGroupMemberPreview] = useState({})
-  const [showNominate, setShowNominate] = useState(false)
-  const [nominateMovie, setNominateMovie] = useState(null)
+  const [eventsLoading, setEventsLoading] = useState(true)
+  const [eventsError, setEventsError] = useState("")
+  const [crews, setCrews] = useState([])
+  const [crewsLoading, setCrewsLoading] = useState(true)
+  const [crewsError, setCrewsError] = useState("")
   const [showCreateEvent, setShowCreateEvent] = useState(false)
-  const [newEventTitle, setNewEventTitle] = useState('')
-  const [newEventDate, setNewEventDate] = useState('')
-  const [newEventLocation, setNewEventLocation] = useState('')
+  const [newEventTitle, setNewEventTitle] = useState("")
+  const [newEventDate, setNewEventDate] = useState("")
+  const [newEventLocation, setNewEventLocation] = useState("")
+  const [selectedCrewId, setSelectedCrewId] = useState("")
+  const [creatingEvent, setCreatingEvent] = useState(false)
+  const [showCreateCrew, setShowCreateCrew] = useState(false)
+  const [newCrewName, setNewCrewName] = useState("")
+  const [creatingCrew, setCreatingCrew] = useState(false)
   const [showDateTimePicker, setShowDateTimePicker] = useState(false)
   const [pickedDate, setPickedDate] = useState(null)
-  const [pickedTime, setPickedTime] = useState('')
-  const [pickedPeriod, setPickedPeriod] = useState('PM')
+  const [pickedTime, setPickedTime] = useState("")
+  const [pickedPeriod, setPickedPeriod] = useState("PM")
   const [displayMonth, setDisplayMonth] = useState(() => {
     const now = new Date()
     return new Date(now.getFullYear(), now.getMonth(), 1)
   })
-  const [showEventsGuide, setShowEventsGuide] = useState(true)
-  const [showCrewsGuide, setShowCrewsGuide] = useState(true)
-  const [showWatchlistGuide, setShowWatchlistGuide] = useState(true)
-  const [showEventsHint, setShowEventsHint] = useState(false)
-  const [showCrewsHint, setShowCrewsHint] = useState(false)
-  const [showWatchlistHint, setShowWatchlistHint] = useState(false)
-  const navigate = useNavigate()
-  
-  // Watchlist Local Search
-  const [watchFilter, setWatchFilter] = useState('')
-  const [showWatchFilters, setShowWatchFilters] = useState(false)
-  const [watchGenres, setWatchGenres] = useState([])
-  const [showAllGenres, setShowAllGenres] = useState(false)
-  const [watchMinScore, setWatchMinScore] = useState(70)
-  const [useWatchScore, setUseWatchScore] = useState(false)
+  const [watchlist, setWatchlist] = useState([])
+  const [watchlistLoading, setWatchlistLoading] = useState(true)
+  const [watchlistError, setWatchlistError] = useState("")
+  const [watchFilter, setWatchFilter] = useState("")
+  const [showWatchlistSearch, setShowWatchlistSearch] = useState(false)
 
-  const eventsListRef = useRef(null)
-  const crewsListRef = useRef(null)
-  const watchlistListRef = useRef(null)
-
-  const username = session.user.user_metadata.username
-
-  useEffect(() => {
-    getMyGroups()
-    getMyWatchlist()
-  }, [])
-
-  useEffect(() => {
-    if (!session?.user?.id) return
-    const key = `eventsGuideDismissed:${session.user.id}`
-    const dismissed = localStorage.getItem(key)
-    setShowEventsGuide(dismissed !== 'true')
-  }, [session])
-
-  useEffect(() => {
-    if (!session?.user?.id) return
-    const key = `crewsGuideDismissed:${session.user.id}`
-    const dismissed = localStorage.getItem(key)
-    setShowCrewsGuide(dismissed !== 'true')
-  }, [session])
-
-  useEffect(() => {
-    if (!session?.user?.id) return
-    const key = `watchlistGuideDismissed:${session.user.id}`
-    const dismissed = localStorage.getItem(key)
-    setShowWatchlistGuide(dismissed !== 'true')
-  }, [session])
-
-  useEffect(() => {
-    let isMounted = true
-    async function loadGenres() {
-      const { data, error } = await supabase.rpc('get_unique_genres')
-      if (error || !Array.isArray(data) || data.length === 0) return
-      const cleaned = data.filter(Boolean)
-      if (!isMounted || cleaned.length === 0) return
-      setGenres(cleaned)
+  const loadEvents = async (isActive = () => true) => {
+    const userId = session?.user?.id
+    if (!userId) {
+      if (isActive()) setEventsLoading(false)
+      return
     }
-    loadGenres()
-    return () => { isMounted = false }
-  }, [])
+    setEventsLoading(true)
+    setEventsError("")
 
-  async function getMyGroups() {
-    const { data } = await supabase
-      .from('group_members')
-      .select('group:groups (id, name, share_code), profiles(display_name, username)')
-      .eq('user_id', session.user.id)
-    if (data) {
-      const groupList = data.map(item => item.group)
-      setGroups(groupList)
-      getMyEvents(groupList.map(g => g.id))
-      if (groupList.length > 0) {
-        getGroupMemberPreview(groupList.map(g => g.id))
+    const [groupsResult, attendeesResult] = await Promise.all([
+      supabase.from("group_members").select("group_id").eq("user_id", userId),
+      supabase.from("event_attendees").select("event_id").eq("user_id", userId),
+    ])
+
+    if (groupsResult.error || attendeesResult.error) {
+      if (isActive()) {
+        setEventsError("Unable to load events right now.")
+        setEventsLoading(false)
       }
+      return
     }
-  }
 
-  async function getGroupMemberPreview(groupIds) {
-    const { data } = await supabase
-      .from('group_members')
-      .select('group_id, profiles(display_name, username)')
-      .in('group_id', groupIds)
-    if (!data) return
-    const grouped = {}
-    data.forEach(item => {
-      const name = item.profiles?.display_name || item.profiles?.username || 'Movie Fan'
-      if (!grouped[item.group_id]) grouped[item.group_id] = []
-      if (name && grouped[item.group_id].length < 3) grouped[item.group_id].push(name)
+    const groupIds = (groupsResult.data || [])
+      .map((row) => row.group_id)
+      .filter(Boolean)
+    const eventIds = (attendeesResult.data || [])
+      .map((row) => row.event_id)
+      .filter(Boolean)
+
+    const [createdResult, groupEventsResult, attendeeEventsResult] = await Promise.all([
+      supabase.from("events").select("*").eq("created_by", userId),
+      groupIds.length
+        ? supabase.from("events").select("*").in("group_id", groupIds)
+        : Promise.resolve({ data: [] }),
+      eventIds.length
+        ? supabase.from("events").select("*").in("id", eventIds)
+        : Promise.resolve({ data: [] }),
+    ])
+
+    if (createdResult.error || groupEventsResult.error || attendeeEventsResult.error) {
+      if (isActive()) {
+        setEventsError("Unable to load events right now.")
+        setEventsLoading(false)
+      }
+      return
+    }
+
+    const merged = new Map()
+    ;[createdResult.data, groupEventsResult.data, attendeeEventsResult.data].forEach(
+      (list) => {
+        (list || []).forEach((event) => {
+          if (event?.id && !merged.has(event.id)) {
+            merged.set(event.id, event)
+          }
+        })
+      }
+    )
+
+    const sorted = Array.from(merged.values()).sort((a, b) => {
+      if (!a.event_date && !b.event_date) return 0
+      if (!a.event_date) return 1
+      if (!b.event_date) return -1
+      return new Date(a.event_date) - new Date(b.event_date)
     })
-    setGroupMemberPreview(grouped)
-  }
 
-  async function getMyEvents(groupIds) {
-    const groupIdList = (groupIds || []).filter(Boolean)
-    const orFilters = [
-      groupIdList.length ? `group_id.in.(${groupIdList.join(',')})` : null,
-      `created_by.eq.${session.user.id}`
-    ].filter(Boolean).join(',')
-    const { data } = await supabase
-      .from('events')
-      .select('id, title, event_date, group_id, created_by')
-      .or(orFilters)
-      .order('event_date', { ascending: true })
-    setEvents(data || [])
-  }
-
-  async function getMyWatchlist() {
-    const { data } = await supabase.from('user_wishlist').select('movie:movies (*)').eq('user_id', session.user.id)
-    if (data) setWatchlist(data.map(item => item.movie))
-  }
-
-  async function addToWatchlist(movie) {
-    // Check duplication
-    const exists = watchlist.find(m => m.id === movie.id)
-    if (exists) return alert("Already in your watchlist!")
-
-    const { error } = await supabase.from('user_wishlist').insert([{ user_id: session.user.id, movie_id: movie.id }])
-    if (!error) {
-      setWatchlist(prev => {
-        if (prev.find(m => m.id === movie.id)) return prev
-        return [movie, ...prev]
-      })
-      getMyWatchlist()
+    if (isActive()) {
+      setEvents(sorted)
+      setEventsLoading(false)
     }
   }
 
-  async function removeFromWatchlist(movie) {
-    const { error } = await supabase
-      .from('user_wishlist')
-      .delete()
-      .eq('user_id', session.user.id)
-      .eq('movie_id', movie.id)
-    if (!error) {
-      setWatchlist(prev => prev.filter(m => m.id !== movie.id))
+  const loadCrews = async (isActive = () => true) => {
+    const userId = session?.user?.id
+    if (!userId) {
+      if (isActive()) setCrewsLoading(false)
+      return
     }
-  }
+    setCrewsLoading(true)
+    setCrewsError("")
 
-  async function nominateFromWatchlist(event) {
-    if (!nominateMovie) return
-    const { data: existing } = await supabase
-      .from('nominations')
-      .select('id')
-      .eq('event_id', event.id)
-      .eq('movie_id', nominateMovie.id)
-      .limit(1)
-    
-    if (existing && existing.length > 0) {
-      return alert('Already nominated for this event!')
-    }
+    const [membershipResult, createdResult] = await Promise.all([
+      supabase.from("group_members").select("group_id").eq("user_id", userId),
+      supabase.from("groups").select("*").eq("created_by", userId),
+    ])
 
-    const { error } = await supabase.from('nominations').insert([{
-      event_id: event.id,
-      movie_id: nominateMovie.id,
-      nominated_by: session.user.id,
-      nomination_type: 'streaming'
-    }])
-    
-    if (!error) {
-      setShowNominate(false)
-      setNominateMovie(null)
-    }
-  }
+    let createdGroups = []
+    let createdError = null
 
-  async function createGroup() {
-    if (!newGroupName) return
-    const shareCode = Math.random().toString(36).substring(2, 9)
-    const { data: group } = await supabase.from('groups').insert([{ name: newGroupName, share_code: shareCode }]).select().single()
-    
-    await supabase.from('group_members').insert([{ group_id: group.id, user_id: session.user.id }])
-    
-    setNewGroupName('')
-    setShowCreateGroup(false)
-    getMyGroups()
-  }
-
-  async function createEventFromDashboard() {
-    if (!newEventTitle) return
-    const { data: createdEvent, error } = await supabase
-      .from('events')
-      .insert([{ 
-        group_id: null, 
-        title: newEventTitle, 
-        event_date: newEventDate || null,
-        location_address: newEventLocation || null,
-        status: 'voting',
-        voting_method: 'hearts',
-        created_by: session.user.id
-      }])
-      .select()
-      .single()
-    if (!error) {
-      setNewEventTitle('')
-      setNewEventDate('')
-      setNewEventLocation('')
-      setShowCreateEvent(false)
-      if (createdEvent?.id) {
-        setEvents(prev => (prev.find(e => e.id === createdEvent.id) ? prev : [createdEvent, ...prev]))
-        navigate(`/room/${createdEvent.id}`, { state: { from: 'hub' } })
+    if (createdResult.error) {
+      if (createdResult.error.message?.includes('column "created_by" does not exist')) {
+        createdGroups = []
+      } else {
+        createdError = createdResult.error
       }
-      getMyGroups()
+    } else {
+      createdGroups = createdResult.data || []
+    }
+
+    if (membershipResult.error && createdError) {
+      if (isActive()) {
+        setCrewsError("Unable to load crews right now.")
+        setCrewsLoading(false)
+      }
+      return
+    }
+
+    const groupIds = (membershipResult.data || []).map((row) => row.group_id).filter(Boolean)
+    let memberGroups = []
+
+    if (groupIds.length > 0) {
+      const { data: groupData, error: groupError } = await supabase
+        .from("groups")
+        .select("*")
+        .in("id", groupIds)
+
+      if (groupError && !createdGroups.length) {
+        if (isActive()) {
+          setCrewsError("Unable to load crews right now.")
+          setCrewsLoading(false)
+        }
+        return
+      }
+      memberGroups = groupData || []
+    }
+
+    const merged = new Map()
+    ;[memberGroups, createdGroups].forEach((list) => {
+      (list || []).forEach((group) => {
+        if (group?.id && !merged.has(group.id)) merged.set(group.id, group)
+      })
+    })
+
+    const sorted = Array.from(merged.values()).sort((a, b) => {
+      const left = a?.name || ""
+      const right = b?.name || ""
+      return left.localeCompare(right)
+    })
+
+    if (isActive()) {
+      setCrews(sorted)
+      setCrewsLoading(false)
     }
   }
 
-  function formatDateTimeLabel(value) {
-    if (!value) return 'Pick date & time'
-    const d = new Date(value)
-    return d.toLocaleString([], { weekday: 'short', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+  const loadWatchlist = async (isActive = () => true) => {
+    const userId = session?.user?.id
+    if (!userId) {
+      if (isActive()) setWatchlistLoading(false)
+      return
+    }
+    setWatchlistLoading(true)
+    setWatchlistError("")
+
+    const { data, error } = await supabase
+      .from("user_wishlist")
+      .select("movie:movies (*)")
+      .eq("user_id", userId)
+
+    if (error) {
+      if (isActive()) {
+        setWatchlistError("Unable to load watchlist right now.")
+        setWatchlistLoading(false)
+      }
+      return
+    }
+
+    const movies = (data || []).map((row) => row.movie).filter(Boolean)
+    if (isActive()) {
+      setWatchlist(movies)
+      setWatchlistLoading(false)
+    }
   }
 
-  function openDateTimePicker() {
+  useEffect(() => {
+    let active = true
+
+    loadEvents(() => active)
+    loadCrews(() => active)
+    loadWatchlist(() => active)
+    return () => {
+      active = false
+    }
+  }, [session?.user?.id])
+
+  const formatEventDate = (value) => {
+    if (!value) return "TBD"
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return "TBD"
+    return date.toLocaleDateString()
+  }
+
+  const formatDateTimeLabel = (value) => {
+    if (!value) return "Pick date & time"
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return "Pick date & time"
+    return date.toLocaleString([], { weekday: "short", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" })
+  }
+
+  const openDateTimePicker = () => {
     const existing = newEventDate ? new Date(newEventDate) : null
     const base = existing || new Date()
     if (!existing) {
@@ -254,657 +247,376 @@ export default function Dashboard({ session }) {
     base.setSeconds(0)
     base.setMilliseconds(0)
     setPickedDate(new Date(base.getFullYear(), base.getMonth(), base.getDate()))
-    setPickedTime(`${String(base.getHours()).padStart(2, '0')}:${String(base.getMinutes()).padStart(2, '0')}`)
-    setPickedPeriod(base.getHours() >= 12 ? 'PM' : 'AM')
+    setPickedTime(`${String(base.getHours()).padStart(2, "0")}:${String(base.getMinutes()).padStart(2, "0")}`)
+    setPickedPeriod(base.getHours() >= 12 ? "PM" : "AM")
     setDisplayMonth(new Date(base.getFullYear(), base.getMonth(), 1))
     setShowDateTimePicker(true)
   }
 
-  function confirmDateTime() {
+  const confirmDateTime = () => {
     if (!pickedDate || !pickedTime) return
-    const [hh, mm] = pickedTime.split(':').map(Number)
+    const [hh, mm] = pickedTime.split(":").map(Number)
     const composed = new Date(pickedDate.getFullYear(), pickedDate.getMonth(), pickedDate.getDate(), hh, mm, 0, 0)
     setNewEventDate(composed.toISOString())
     setShowDateTimePicker(false)
   }
 
-  async function joinGroupByCode() {
-    const code = joinCode.trim()
-    if (!code) return
-    const { data: group, error } = await supabase
-      .from('groups')
-      .select('id, name')
-      .eq('share_code', code)
-      .single()
-    if (error || !group) return alert('Invalid crew code.')
-    const { error: joinError } = await supabase
-      .from('group_members')
-      .insert([{ group_id: group.id, user_id: session.user.id }])
-    if (joinError) {
-      if (joinError.code === '23505') {
-        alert(`You're already in ${group.name}.`)
-      } else {
-        alert('Error joining crew.')
-      }
+  const createEvent = async () => {
+    const userId = session?.user?.id
+    const title = newEventTitle.trim()
+    if (!userId || !title || creatingEvent) return
+    setCreatingEvent(true)
+
+    const payload = {
+      title,
+      event_date: newEventDate || null,
+      location_address: newEventLocation.trim() || null,
+      group_id: selectedCrewId || null,
+      status: "voting",
+      voting_method: "hearts",
+      created_by: userId,
+    }
+
+    const { error } = await supabase.from("events").insert([payload])
+    setCreatingEvent(false)
+
+    if (error) {
+      alert(`Error creating event: ${error.message}`)
       return
     }
-    setJoinCode('')
-    setShowJoinGroup(false)
-    getMyGroups()
+
+    setNewEventTitle("")
+    setNewEventDate("")
+    setNewEventLocation("")
+    setSelectedCrewId("")
+    setShowCreateEvent(false)
+    loadEvents()
   }
 
-  // Filter watchlist logic
-  const filteredWatchlist = watchlist.filter(m => {
-    const titlePass = m.title.toLowerCase().includes(watchFilter.toLowerCase())
-    const movieGenres = Array.isArray(m.genre) ? m.genre : (m.genre ? [m.genre] : [])
-    const genrePass = watchGenres.length === 0 || watchGenres.some(g => movieGenres.includes(g))
-    const score = m.rt_score === null ? 100 : m.rt_score
-    const scorePass = !useWatchScore || score >= watchMinScore
-    return titlePass && genrePass && scorePass
-  })
-  const toggleWatchGenre = (genre) => {
-    setWatchGenres(prev => prev.includes(genre) ? prev.filter(g => g !== genre) : [...prev, genre])
+  const createCrew = async () => {
+    const userId = session?.user?.id
+    const name = newCrewName.trim()
+    if (!userId || !name || creatingCrew) return
+    setCreatingCrew(true)
+
+    let createdGroup = null
+    let insertError = null
+
+    const primaryInsert = await supabase.from("groups").insert([{ name, created_by: userId }]).select().single()
+    if (primaryInsert.error && primaryInsert.error.message?.includes('column "created_by" does not exist')) {
+      const fallbackInsert = await supabase.from("groups").insert([{ name }]).select().single()
+      createdGroup = fallbackInsert.data
+      insertError = fallbackInsert.error
+    } else {
+      createdGroup = primaryInsert.data
+      insertError = primaryInsert.error
+    }
+
+    if (insertError || !createdGroup?.id) {
+      setCreatingCrew(false)
+      alert(`Error creating crew: ${insertError?.message || "Unknown error"}`)
+      return
+    }
+
+    const { error: memberError } = await supabase
+      .from("group_members")
+      .insert([{ group_id: createdGroup.id, user_id: userId }])
+
+    setCreatingCrew(false)
+
+    if (memberError) {
+      alert(`Error joining crew: ${memberError.message}`)
+      return
+    }
+
+    setNewCrewName("")
+    setShowCreateCrew(false)
+    loadCrews()
   }
-  const clearWatchGenres = () => setWatchGenres([])
-  const sortedGenres = [...genres].sort((a, b) => a.localeCompare(b))
-  const commonGenres = COMMON_GENRES.filter(g => genres.includes(g))
-  const visibleGenres = showAllGenres ? sortedGenres : commonGenres
-  const groupNameById = Object.fromEntries(groups.map(g => [g.id, g.name]))
-  const eventsGuideKey = session?.user?.id ? `eventsGuideDismissed:${session.user.id}` : null
-  const crewsGuideKey = session?.user?.id ? `crewsGuideDismissed:${session.user.id}` : null
-  const watchlistGuideKey = session?.user?.id ? `watchlistGuideDismissed:${session.user.id}` : null
 
-  const updateScrollHint = (el, setHint) => {
-    if (!el) return
-    const hasOverflow = el.scrollHeight - el.clientHeight > 4
-    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 2
-    setHint(hasOverflow && !atBottom)
+  const removeFromWatchlist = async (movie) => {
+    const userId = session?.user?.id
+    if (!userId || !movie?.id) return
+    const { error } = await supabase
+      .from("user_wishlist")
+      .delete()
+      .eq("user_id", userId)
+      .eq("movie_id", movie.id)
+
+    if (error) {
+      alert(`Error removing movie: ${error.message}`)
+      return
+    }
+
+    setWatchlist((prev) => prev.filter((item) => item.id !== movie.id))
   }
 
-  useEffect(() => {
-    const el = eventsListRef.current
-    if (!el) return
-    const handle = () => updateScrollHint(el, setShowEventsHint)
-    const raf = requestAnimationFrame(handle)
-    window.addEventListener('resize', handle)
-    return () => {
-      cancelAnimationFrame(raf)
-      window.removeEventListener('resize', handle)
-    }
-  }, [events.length, activeTab])
+  const addToWatchlist = async (movie) => {
+    const userId = session?.user?.id
+    if (!userId || !movie?.id) return
+    const { error } = await supabase
+      .from("user_wishlist")
+      .insert([{ user_id: userId, movie_id: movie.id }])
 
-  useEffect(() => {
-    const el = crewsListRef.current
-    if (!el) return
-    const handle = () => updateScrollHint(el, setShowCrewsHint)
-    const raf = requestAnimationFrame(handle)
-    window.addEventListener('resize', handle)
-    return () => {
-      cancelAnimationFrame(raf)
-      window.removeEventListener('resize', handle)
+    if (error) {
+      if (error.code === "23505") {
+        return
+      }
+      alert(`Error adding movie: ${error.message}`)
+      return
     }
-  }, [groups.length, activeTab])
 
-  useEffect(() => {
-    const el = watchlistListRef.current
-    if (!el) return
-    const handle = () => updateScrollHint(el, setShowWatchlistHint)
-    const raf = requestAnimationFrame(handle)
-    window.addEventListener('resize', handle)
-    return () => {
-      cancelAnimationFrame(raf)
-      window.removeEventListener('resize', handle)
-    }
-  }, [filteredWatchlist.length, activeTab, watchFilter, watchGenres, showAllGenres, watchMinScore, useWatchScore])
+    loadWatchlist()
+  }
 
+  const filteredWatchlist = watchFilter
+    ? watchlist.filter((movie) =>
+        (movie.title || "").toLowerCase().includes(watchFilter.trim().toLowerCase())
+      )
+    : watchlist
 
   return (
-    <div style={{ paddingBottom: '12px', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      {/* HEADER */}
-      <div className="flex-between" style={{ marginBottom: '30px' }}>
+    <div className="p-6 h-full flex flex-col">
+      <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 style={{ fontSize: '1.8rem', fontWeight: '800', margin: 0 }}>
-            <span className="gradient-text">My Hub</span>
-          </h1>
-          <p className="text-sm">@{username}</p>
+          <h1 className="text-3xl font-extrabold m-0">My Hub</h1>
+          <p className="text-sm text-slate-400">@username</p>
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <Link to="/profile" style={{ textDecoration: 'none' }}>
-            <button style={{ width: 'auto', background: 'rgba(255,255,255,0.1)', padding: '10px', borderRadius: '50%', color: 'white' }}>
+        <div className="flex items-center gap-2">
+          <Link to="/profile" className="no-underline">
+            <button
+              type="button"
+              className="w-auto bg-white/10 p-2.5 rounded-full text-white"
+              title="Profile"
+            >
               <User size={20} />
             </button>
           </Link>
-          <button onClick={() => supabase.auth.signOut()} style={{ width: 'auto', background: 'rgba(255,255,255,0.1)', padding: '10px', borderRadius: '50%', color: 'white' }}>
-              <LogOut size={20} />
+          <button
+            type="button"
+            onClick={() => supabase.auth.signOut()}
+            className="w-auto bg-white/10 p-2.5 rounded-full text-white"
+            title="Log out"
+          >
+            <LogOut size={20} />
           </button>
         </div>
       </div>
 
-      {/* TABS */}
-      <div style={{ display: 'flex', background: 'rgba(0,0,0,0.3)', padding: '4px', borderRadius: '16px', marginBottom: '24px' }}>
-        <button onClick={() => setActiveTab('events')} style={{ flex: 1, padding: '12px', borderRadius: '12px', background: activeTab === 'events' ? 'rgba(255,255,255,0.1)' : 'transparent', color: activeTab === 'events' ? 'white' : '#888', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-            <Calendar size={18} /> Events
+      <div className="flex bg-black/30 p-1 rounded-2xl mb-6">
+        <button
+          type="button"
+          onClick={() => setActiveTab("events")}
+          className={`flex-1 p-3 rounded-lg flex items-center justify-center gap-2 ${
+            activeTab === "events" ? "bg-white/10 text-white" : "text-slate-400"
+          }`}
+        >
+          Events
         </button>
-        <button onClick={() => setActiveTab('groups')} style={{ flex: 1, padding: '12px', borderRadius: '12px', background: activeTab === 'groups' ? 'rgba(255,255,255,0.1)' : 'transparent', color: activeTab === 'groups' ? 'white' : '#888', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-            <Users size={18} /> Crews
+        <button
+          type="button"
+          onClick={() => setActiveTab("crews")}
+          className={`flex-1 p-3 rounded-lg flex items-center justify-center gap-2 ${
+            activeTab === "crews" ? "bg-white/10 text-white" : "text-slate-400"
+          }`}
+        >
+          Crews
         </button>
-        <button onClick={() => setActiveTab('watchlist')} style={{ flex: 1, padding: '12px', borderRadius: '12px', background: activeTab === 'watchlist' ? 'rgba(255,255,255,0.1)' : 'transparent', color: activeTab === 'watchlist' ? 'white' : '#888', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-            <Book size={18} /> Watchlist
+        <button
+          type="button"
+          onClick={() => setActiveTab("watchlist")}
+          className={`flex-1 p-3 rounded-lg flex items-center justify-center gap-2 ${
+            activeTab === "watchlist" ? "bg-white/10 text-white" : "text-slate-400"
+          }`}
+        >
+          Watchlist
         </button>
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        <AnimatePresence mode="wait">
-          {activeTab === 'groups' ? (
-            <motion.div key="groups" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} style={{ display: 'flex', flexDirection: 'column', gap: '8px', minHeight: 0, flex: 1 }}>
-             {showCrewsGuide && (
-               <div style={{ position: 'relative', marginBottom: '14px', paddingTop: '8px', paddingRight: '12px' }}>
-                 <div
-                   style={{
-                     padding: '14px',
-                     borderRadius: '14px',
-                     border: '1px dashed rgba(0,229,255,0.35)',
-                     background: 'rgba(0,229,255,0.06)',
-                     textAlign: 'center'
-                   }}
-                 >
-                   <div style={{ fontWeight: 700, marginBottom: '6px', color: '#e2e8f0' }}>
-                     This is where you see your movie night crews!
-                   </div>
-                   <div className="text-sm" style={{ color: '#cbd5e1' }}>
-                     A crew is a group of users you plan your movie nights with. Use a crew to make repeat movie nights easier
-                   </div>
-                 </div>
-                 <button
-                   type="button"
-                   onClick={() => {
-                     if (crewsGuideKey) localStorage.setItem(crewsGuideKey, 'true')
-                     setShowCrewsGuide(false)
-                   }}
-                   style={{
-                     position: 'absolute',
-                     top: 0,
-                     right: 0,
-                     background: 'rgba(0,229,255,0.28)',
-                     color: '#00E5FF',
-                     borderRadius: '999px',
-                     padding: '6px',
-                     display: 'inline-flex',
-                     alignItems: 'center',
-                     justifyContent: 'center',
-                     boxShadow: '0 6px 16px rgba(0,229,255,0.2)'
-                   }}
-                   aria-label="Minimize crews guide"
-                   title="Dismiss"
-                 >
-                   <Minus size={14} />
-                 </button>
-               </div>
-             )}
-             {/* NEW CREW BUTTON */}
-             <button onClick={() => setShowCreateGroup(!showCreateGroup)} style={{ width: '100%', marginBottom: '15px', background: 'var(--primary)', color: 'white', padding: '12px', borderRadius: '12px' }}>
-                {showCreateGroup ? 'Cancel' : '+ Start New Crew'}
-             </button>
-
-             {showCreateGroup && (
-                <div className="glass-panel" style={{ marginBottom: '20px' }}>
-                    <input autoFocus placeholder="Crew Name (e.g. Action Buffs)" value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)} />
-                    <button
-                      onClick={createGroup}
-                      style={{
-                        marginTop: '10px',
-                        background: '#00E5FF',
-                        color: 'black',
-                        width: '100%',
-                        padding: '12px',
-                        borderRadius: '999px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontWeight: 700
-                      }}
-                    >
-                      Create
-                    </button>
-                </div>
-             )}
-
-             {/* JOIN CREW BUTTON */}
-             <button onClick={() => setShowJoinGroup(!showJoinGroup)} style={{ width: '100%', marginBottom: '15px', background: 'rgba(255,255,255,0.08)', color: 'white', padding: '12px', borderRadius: '12px' }}>
-                {showJoinGroup ? 'Cancel' : '+ Join a Crew'}
-             </button>
-
-             {showJoinGroup && (
-                <div className="glass-panel" style={{ marginBottom: '20px' }}>
-                    <input placeholder="Enter invite code" value={joinCode} onChange={(e) => setJoinCode(e.target.value)} />
-                    <button
-                      onClick={joinGroupByCode}
-                      style={{
-                        marginTop: '10px',
-                        background: '#00E5FF',
-                        color: 'black',
-                        width: '100%',
-                        padding: '12px',
-                        borderRadius: '999px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontWeight: 700
-                      }}
-                    >
-                      Join
-                    </button>
-                </div>
-             )}
-
-             <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
-               {showCrewsHint && (
-                 <div style={{ position: 'absolute', left: 0, right: 0, bottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', color: '#cbd5e1', fontSize: '0.75rem', pointerEvents: 'none', zIndex: 2 }}>
-                   <span style={{ background: 'rgba(15,23,42,0.9)', border: '1px solid rgba(255,255,255,0.1)', padding: '4px 10px', borderRadius: '999px', display: 'inline-flex', alignItems: 'center', gap: '6px', boxShadow: '0 8px 18px rgba(0,0,0,0.35)' }}>
-                   <span>Scroll for more</span>
-                   <ChevronDown size={14} />
-                   </span>
-                 </div>
-               )}
-               <div
-                 ref={crewsListRef}
-                 onScroll={(e) => updateScrollHint(e.currentTarget, setShowCrewsHint)}
-                 style={{ height: '100%', overflowY: 'auto', paddingRight: '12px', paddingBottom: '12px', scrollbarGutter: 'stable' }}
-               >
-                 {groups.length === 0 ? (
-                   <p className="text-sm" style={{ textAlign: 'center', color: '#9ca3af' }}>
-                     Not currently in any crews.
-                   </p>
-                 ) : (
-                   groups.map(g => (
-                     <Link key={g.id} to={`/group/${g.id}`} style={{ textDecoration: 'none' }}>
-                       <div className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px', marginBottom: '12px' }}>
-                          <div>
-                            <div style={{ fontWeight: '600', fontSize: '1.1rem', color: 'white' }}>{g.name}</div>
-                            <div className="text-sm">
-                              {groupMemberPreview[g.id]?.length
-                                ? `${groupMemberPreview[g.id].join(', ')}${groupMemberPreview[g.id].length === 3 ? '...' : ''}`
-                                : 'No members yet'}
-                            </div>
-                          </div>
-                          <span style={{ color: 'var(--text-muted)' }}>→</span>
-                       </div>
-                     </Link>
-                   ))
-                 )}
-               </div>
-             </div>
-            </motion.div>
-          ) : activeTab === 'events' ? (
-            <motion.div key="events" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} style={{ display: 'flex', flexDirection: 'column', gap: '8px', minHeight: 0, flex: 1 }}>
-            {showEventsGuide && (
-              <div style={{ position: 'relative', marginBottom: '14px', paddingTop: '8px', paddingRight: '12px' }}>
-                <div
-                  style={{
-                    padding: '14px',
-                    borderRadius: '14px',
-                    border: '1px dashed rgba(0,229,255,0.35)',
-                    background: 'rgba(0,229,255,0.06)',
-                    textAlign: 'center'
-                  }}
-                >
-                  <div style={{ fontWeight: 700, marginBottom: '6px', color: '#e2e8f0' }}>
-                    This is where you  see all your events!
-                  </div>
-                  <div className="text-sm" style={{ color: '#cbd5e1' }}>
-                    An event is an upcoming movie night. You can invite people to events using the event link
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (eventsGuideKey) localStorage.setItem(eventsGuideKey, 'true')
-                    setShowEventsGuide(false)
-                  }}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    right: 0,
-                    background: 'rgba(0,229,255,0.28)',
-                    color: '#00E5FF',
-                    borderRadius: '999px',
-                    padding: '6px',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    boxShadow: '0 6px 16px rgba(0,229,255,0.2)'
-                  }}
-                  aria-label="Minimize events guide"
-                  title="Dismiss"
-                >
-                  <Minus size={14} />
-                </button>
-              </div>
-            )}
-            <button onClick={() => setShowCreateEvent(!showCreateEvent)} style={{ width: '100%', marginBottom: '15px', background: 'var(--primary)', color: 'white', padding: '12px', borderRadius: '12px' }}>
-              {showCreateEvent ? 'Cancel' : '+ New Event'}
-            </button>
-
-            {showCreateEvent && (
-              <div className="glass-panel" style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <input placeholder="Event Title (e.g. Friday Horror)" value={newEventTitle} onChange={(e) => setNewEventTitle(e.target.value)} autoFocus />
-                <button
-                  onClick={openDateTimePicker}
-                  style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.08)', color: 'white', padding: '12px', borderRadius: '12px', justifyContent: 'center' }}
-                >
-                  <Calendar size={16} />
-                  <Clock size={16} />
-                  {formatDateTimeLabel(newEventDate)}
-                </button>
-                <input placeholder="Location(Optional)" value={newEventLocation} onChange={(e) => setNewEventLocation(e.target.value)} />
-                <button
-                  onClick={createEventFromDashboard}
-                  style={{
-                    marginTop: '10px',
-                    background: '#00E5FF',
-                    color: 'black',
-                    width: '100%',
-                    padding: '12px',
-                    borderRadius: '999px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontWeight: 700
-                  }}
-                >
-                  Create Event
-                </button>
-              </div>
-            )}
-
-            <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
-              {showEventsHint && (
-                <div style={{ position: 'absolute', left: 0, right: 0, bottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', color: '#cbd5e1', fontSize: '0.75rem', pointerEvents: 'none', zIndex: 2 }}>
-                  <span style={{ background: 'rgba(15,23,42,0.9)', border: '1px solid rgba(255,255,255,0.1)', padding: '4px 10px', borderRadius: '999px', display: 'inline-flex', alignItems: 'center', gap: '6px', boxShadow: '0 8px 18px rgba(0,0,0,0.35)' }}>
-                  <span>Scroll for more</span>
-                  <ChevronDown size={14} />
-                  </span>
-                </div>
-              )}
-              <div
-                ref={eventsListRef}
-                onScroll={(e) => updateScrollHint(e.currentTarget, setShowEventsHint)}
-                style={{ height: '100%', overflowY: 'auto', paddingRight: '12px', paddingBottom: '12px', scrollbarGutter: 'stable' }}
-              >
-                {events.length === 0 ? (
-                  <p className="text-sm" style={{ textAlign: 'center', color: '#9ca3af' }}>
-                    You have no upcoming events yet.
-                  </p>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {events.map(event => (
-                      <Link key={event.id} to={`/room/${event.id}`} state={{ from: 'hub' }} style={{ textDecoration: 'none' }}>
-                        <div className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px' }}>
-                          <div>
-                            <div style={{ fontWeight: 700, color: 'white' }}>{event.title}</div>
-                            <div className="text-sm" style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
-                              {groupNameById[event.group_id] || 'No Crew'} • {event.event_date ? new Date(event.event_date).toLocaleDateString() : 'TBD'}
-                              {event.created_by === session.user.id && (
-                                <span style={{ background: 'rgba(0,229,255,0.15)', color: '#00E5FF', padding: '2px 8px', borderRadius: '10px', fontSize: '0.75rem' }}>
-                                  Creator
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          <span style={{ color: 'var(--text-muted)' }}>→</span>
-                        </div>
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </motion.div>
-        ) : (
-          <motion.div key="watchlist" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} style={{ display: 'flex', flexDirection: 'column', gap: '8px', minHeight: 0, flex: 1 }}>
-              {showWatchlistGuide && (
-                <div style={{ position: 'relative', marginBottom: '14px', paddingTop: '8px', paddingRight: '12px' }}>
-                  <div
-                    style={{
-                      padding: '14px',
-                      borderRadius: '14px',
-                      border: '1px dashed rgba(0,229,255,0.35)',
-                      background: 'rgba(0,229,255,0.06)',
-                      textAlign: 'center'
-                    }}
-                  >
-                    <div style={{ fontWeight: 700, marginBottom: '6px', color: '#e2e8f0' }}>
-                      This is your watchlist!
-                    </div>
-                    <div className="text-sm" style={{ color: '#cbd5e1' }}>
-                      This is where you can add movies you actively want to watch. Having movies in your watchlist makes it easier for you and your friends to nominate them for a movie night
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (watchlistGuideKey) localStorage.setItem(watchlistGuideKey, 'true')
-                      setShowWatchlistGuide(false)
-                    }}
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      right: 0,
-                      background: 'rgba(0,229,255,0.28)',
-                      color: '#00E5FF',
-                      borderRadius: '999px',
-                      padding: '6px',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      boxShadow: '0 6px 16px rgba(0,229,255,0.2)'
-                    }}
-                    aria-label="Minimize watchlist guide"
-                    title="Dismiss"
-                  >
-                    <Minus size={14} />
-                  </button>
-                </div>
-              )}
-              {/* WATCHLIST ACTION BAR */}
-              <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
-                  <div style={{ position: 'relative', flex: 1 }}>
-                      <Search size={16} style={{ position: 'absolute', left: 12, top: 14, color: '#888' }} />
-                      <input placeholder="Search your Watchlist..." alue={watchFilter} onChange={(e) => setWatchFilter(e.target.value)} style={{ paddingLeft: '35px' }} />
-                  </div>
-                  <button onClick={() => setShowWatchFilters(!showWatchFilters)} style={{ width: 'auto', background: 'rgba(255,255,255,0.08)', color: 'white', padding: '0 12px', borderRadius: '10px', height: '44px' }}>
-                    <Filter size={16} color={showWatchFilters ? '#00E5FF' : 'white'} />
-                  </button>
-                  <button onClick={() => setShowSearch(true)} style={{ width: 'auto', background: '#00E5FF', color: 'black', padding: '0 12px', borderRadius: '10px', height: '44px' }}>
-                    <Plus size={18} />
-                  </button>
-              </div>
-
-              {showWatchFilters && (
-                <div style={{ marginBottom: '16px', padding: '12px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px' }}>
-                  <div style={{ marginBottom: '10px' }}>
-                    <div className="flex-gap" style={{ flexWrap: 'wrap' }}>
-                      {visibleGenres.map(g => (
-                        <button
-                          key={g}
-                          onClick={() => toggleWatchGenre(g)}
-                          style={{
-                            padding: '6px 10px',
-                            borderRadius: '999px',
-                            border: '1px solid #333',
-                            background: watchGenres.includes(g) ? '#00E5FF' : 'rgba(255,255,255,0.08)',
-                            color: watchGenres.includes(g) ? 'black' : 'white',
-                            fontSize: '0.75rem',
-                            fontWeight: 600
-                          }}
-                        >
-                          {g}
-                        </button>
-                      ))}
-                    </div>
-                    {genres.length > 8 && (
-                      <button
-                        onClick={() => setShowAllGenres(prev => !prev)}
-                        style={{
-                          marginTop: '8px',
-                          background: 'transparent',
-                          border: 'none',
-                          color: '#9ca3af',
-                          fontSize: '0.75rem',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px'
-                        }}
-                      >
-                        {showAllGenres ? 'See less' : 'See more'} {showAllGenres ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                      </button>
-                    )}
-                    {watchGenres.length > 0 && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
-                        {watchGenres.map(g => (
-                          <button
-                            key={g}
-                            onClick={() => toggleWatchGenre(g)}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                              padding: '4px 8px',
-                              borderRadius: '999px',
-                              border: '1px solid rgba(0,229,255,0.4)',
-                              background: 'rgba(0,229,255,0.12)',
-                              color: '#00E5FF',
-                              fontSize: '0.75rem'
-                            }}
-                          >
-                            {g} <span style={{ fontWeight: 700 }}>x</span>
-                          </button>
-                        ))}
-                        <button
-                          onClick={clearWatchGenres}
-                          style={{ padding: '4px 8px', borderRadius: '999px', border: '1px solid #333', background: 'transparent', color: '#9ca3af', fontSize: '0.75rem' }}
-                        >
-                          Clear
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex-between">
-                    <span className="text-sm">Minimum Rotten Tomato Score</span>
-                    <input className="toggle" type="checkbox" checked={useWatchScore} onChange={(e) => setUseWatchScore(e.target.checked)} />
-                  </div>
-                  {useWatchScore && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <input type="range" value={watchMinScore} onChange={(e) => setWatchMinScore(Number(e.target.value))} style={{ flex: 1 }} />
-                      <span className="text-sm" style={{ minWidth: '48px', textAlign: 'right' }}>{watchMinScore}%</span>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
-                {showWatchlistHint && (
-                  <div style={{ position: 'absolute', left: 0, right: 0, bottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', color: '#cbd5e1', fontSize: '0.75rem', pointerEvents: 'none', zIndex: 2 }}>
-                    <span style={{ background: 'rgba(15,23,42,0.9)', border: '1px solid rgba(255,255,255,0.1)', padding: '4px 10px', borderRadius: '999px', display: 'inline-flex', alignItems: 'center', gap: '6px', boxShadow: '0 8px 18px rgba(0,0,0,0.35)' }}>
-                    <span>Scroll for more</span>
-                    <ChevronDown size={14} />
-                    </span>
-                  </div>
-                )}
-                <div
-                  ref={watchlistListRef}
-                  onScroll={(e) => updateScrollHint(e.currentTarget, setShowWatchlistHint)}
-                  style={{ height: '100%', overflowY: 'auto', paddingRight: '12px', paddingBottom: '12px', scrollbarGutter: 'stable' }}
-                >
-                  {filteredWatchlist.length === 0 && <p className="text-sm" style={{textAlign:'center'}}>No movies found.</p>}
-                  
-                  {filteredWatchlist.map(movie => (
-                      <MovieCard key={movie.id} movie={movie}>
-                        <div style={{ display: 'flex', gap: '10px' }}>
-                          <button
-                            onClick={() => { setNominateMovie(movie); setShowNominate(true) }}
-                            style={{ flex: 1, background: 'rgba(255,255,255,0.1)', color: 'white', padding: '10px', borderRadius: '12px' }}
-                          >
-                            Nominate
-                          </button>
-                          <button
-                            onClick={() => removeFromWatchlist(movie)}
-                            style={{ background: 'rgba(255,255,255,0.06)', color: '#ff7a7a', padding: '10px 12px', borderRadius: '12px' }}
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      </MovieCard>
-                  ))}
-                </div>
-              </div>
-          </motion.div>
-        )}
-        </AnimatePresence>
-      </div>
-
-      <AnimatePresence>
-        {showSearch && <SearchMovies eventId={null} onClose={() => setShowSearch(false)} customAction={addToWatchlist} customRemoveAction={removeFromWatchlist} />}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {showNominate && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(5px)' }}
+      {activeTab === "events" && (
+        <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+          <button
+            type="button"
+            onClick={() => setShowCreateEvent((prev) => !prev)}
+            className="w-full mb-4 bg-primary text-white p-3 rounded-lg font-semibold"
           >
-            <motion.div
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              style={{ width: '100%', maxWidth: '500px', height: '70vh', background: '#1a1a2e', borderTopLeftRadius: '24px', borderTopRightRadius: '24px', padding: '20px', display: 'flex', flexDirection: 'column' }}
-            >
-              <div className="flex-between" style={{ marginBottom: '20px' }}>
-                <h2 style={{ margin: 0 }}>Nominate to Event</h2>
-                <button
-                  onClick={() => { setShowNominate(false); setNominateMovie(null) }}
-                  style={{
-                    background: '#333',
-                    width: '36px',
-                    height: '36px',
-                    padding: 0,
-                    borderRadius: '999px',
-                    color: 'white',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0
-                  }}
-                >
-                  <X size={20} />
-                </button>
-              </div>
+            {showCreateEvent ? "Cancel" : "+ New Event"}
+          </button>
 
-              {events.length === 0 && (
-                <p className="text-sm" style={{ textAlign: 'center' }}>
-                  You're not in any events yet. Create one in a crew to nominate from your watchlist.
-                </p>
-              )}
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', overflowY: 'auto' }}>
-                {events.map(event => (
-                  <button
-                    key={event.id}
-                    onClick={() => nominateFromWatchlist(event)}
-                    style={{ background: 'rgba(255,255,255,0.08)', color: 'white', padding: '14px', borderRadius: '12px', textAlign: 'left' }}
-                  >
-                    <div style={{ fontWeight: '600' }}>{event.title}</div>
-                    <div className="text-sm">
-                      {groupNameById[event.group_id] || 'Crew'} • {event.event_date ? new Date(event.event_date).toLocaleDateString() : 'TBD'}
-                    </div>
-                  </button>
+          {showCreateEvent && (
+            <div className="bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-2xl p-4 mb-5 flex flex-col gap-2.5">
+              <input
+                placeholder="Event Title (e.g. Friday Horror)"
+                value={newEventTitle}
+                onChange={(e) => setNewEventTitle(e.target.value)}
+                className="w-full bg-black/30 border border-white/10 text-white p-3.5 rounded-lg text-base"
+              />
+              <button
+                type="button"
+                onClick={openDateTimePicker}
+                className="flex items-center justify-center gap-2 bg-white/10 text-white p-3 rounded-lg"
+              >
+                {formatDateTimeLabel(newEventDate)}
+              </button>
+              <input
+                placeholder="Location (Optional)"
+                value={newEventLocation}
+                onChange={(e) => setNewEventLocation(e.target.value)}
+                className="w-full bg-black/30 border border-white/10 text-white p-3.5 rounded-lg text-base"
+              />
+              <select
+                value={selectedCrewId}
+                onChange={(e) => setSelectedCrewId(e.target.value)}
+                className="w-full bg-black/30 border border-white/10 text-white p-3.5 rounded-lg text-base"
+              >
+                <option value="">No crew</option>
+                {crews.map((crew) => (
+                  <option key={crew.id} value={crew.id}>
+                    {crew.name || "Untitled crew"}
+                  </option>
                 ))}
-              </div>
-            </motion.div>
-          </motion.div>
+              </select>
+              <button
+                type="button"
+                onClick={createEvent}
+                disabled={creatingEvent}
+                className="mt-1 bg-accent text-black w-full p-3 rounded-full flex items-center justify-center font-bold disabled:opacity-60"
+              >
+                {creatingEvent ? "Creating..." : "Create Event"}
+              </button>
+            </div>
+          )}
+
+          {eventsLoading ? (
+            <p className="text-sm text-center text-slate-400">Loading events...</p>
+          ) : eventsError ? (
+            <p className="text-sm text-center text-slate-400">{eventsError}</p>
+          ) : events.length === 0 ? (
+            <p className="text-sm text-center text-slate-400">You have no upcoming events yet.</p>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {events.map((event) => (
+                <Link key={event.id} to={`/room/${event.id}`} className="no-underline">
+                  <div className="bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-2xl p-4 flex justify-between items-center hover:bg-slate-800/50 transition-colors">
+                    <div>
+                      <div className="font-bold text-white">
+                        {event.title || "Untitled event"}
+                      </div>
+                      <div className="text-sm text-slate-400">
+                        {event.group_id ? "Crew event" : "Direct event"} •{" "}
+                        {formatEventDate(event.event_date)}
+                      </div>
+                    </div>
+                    <span className="text-slate-400">→</span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {activeTab === "crews" && (
+        <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+          <button
+            type="button"
+            onClick={() => setShowCreateCrew((prev) => !prev)}
+            className="w-full mb-4 bg-primary text-white p-3 rounded-lg font-semibold"
+          >
+            {showCreateCrew ? "Cancel" : "+ Start New Crew"}
+          </button>
+
+          {showCreateCrew && (
+            <div className="bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-2xl p-4 mb-5">
+              <input
+                placeholder="Crew Name (e.g. Action Buffs)"
+                value={newCrewName}
+                onChange={(e) => setNewCrewName(e.target.value)}
+                className="w-full bg-black/30 border border-white/10 text-white p-3.5 rounded-lg text-base"
+              />
+              <button
+                type="button"
+                onClick={createCrew}
+                disabled={creatingCrew}
+                className="mt-2.5 bg-accent text-black w-full p-3 rounded-full flex items-center justify-center font-bold disabled:opacity-60"
+              >
+                {creatingCrew ? "Creating..." : "Create Crew"}
+              </button>
+            </div>
+          )}
+
+          {crewsLoading ? (
+            <p className="text-sm text-center text-slate-400">Loading crews...</p>
+          ) : crewsError ? (
+            <p className="text-sm text-center text-slate-400">{crewsError}</p>
+          ) : crews.length === 0 ? (
+            <p className="text-sm text-center text-slate-400">Not currently in any crews.</p>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {crews.map((crew) => (
+                <Link key={crew.id} to={`/group/${crew.id}`} className="no-underline">
+                  <div className="bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-2xl p-4 flex justify-between items-center hover:bg-slate-800/50 transition-colors">
+                    <div className="font-semibold text-white">{crew.name || "Untitled crew"}</div>
+                    <span className="text-slate-400">→</span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {activeTab === "watchlist" && (
+        <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+          <div className="flex gap-2.5 mb-5">
+            <input
+              placeholder="Search your watchlist..."
+              value={watchFilter}
+              onChange={(e) => setWatchFilter(e.target.value)}
+              className="w-full bg-black/30 border border-white/10 text-white p-3 rounded-lg text-base"
+            />
+            <button
+              type="button"
+              onClick={() => setShowWatchlistSearch(true)}
+              className="w-auto bg-accent text-black px-3 rounded-lg"
+              title="Add to watchlist"
+            >
+              <Plus size={18} />
+            </button>
+          </div>
+
+          {watchlistLoading ? (
+            <p className="text-sm text-center text-slate-400">Loading watchlist...</p>
+          ) : watchlistError ? (
+            <p className="text-sm text-center text-slate-400">{watchlistError}</p>
+          ) : filteredWatchlist.length === 0 ? (
+            <p className="text-sm text-center text-slate-400">No movies found.</p>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {filteredWatchlist.map((movie) => (
+                <MovieCard key={movie.id} movie={movie}>
+                  <div className="flex gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => removeFromWatchlist(movie)}
+                      className="w-full bg-white/10 text-white p-2.5 rounded-lg"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </MovieCard>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      <AnimatePresence>
+        {showWatchlistSearch && (
+          <SearchMovies
+            eventId={null}
+            groupId={null}
+            onClose={() => setShowWatchlistSearch(false)}
+            customAction={addToWatchlist}
+            customRemoveAction={removeFromWatchlist}
+          />
         )}
       </AnimatePresence>
       <DateTimePickerSheet
@@ -924,179 +636,4 @@ export default function Dashboard({ session }) {
   )
 }
 
-function DateTimePickerSheet({
-  show,
-  onClose,
-  displayMonth,
-  setDisplayMonth,
-  pickedDate,
-  setPickedDate,
-  pickedTime,
-  setPickedTime,
-  pickedPeriod,
-  setPickedPeriod,
-  onConfirm
-}) {
-  if (!show) return null
-  const days = buildCalendarDays(displayMonth)
-  const monthLabel = displayMonth.toLocaleString([], { month: 'long', year: 'numeric' })
-  const timeSlots = getTimeSlots(30)
-  const today = new Date()
-  const isSameDay = (d1, d2) => d1 && d2 && d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate()
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(5px)' }}>
-      <div style={{ width: '100%', maxWidth: '500px', height: '80vh', background: '#1a1a2e', borderTopLeftRadius: '24px', borderTopRightRadius: '24px', padding: '20px', display: 'flex', flexDirection: 'column' }}>
-        <div className="flex-between" style={{ marginBottom: '12px' }}>
-          <h2 style={{ margin: 0 }}>Pick Date & Time</h2>
-          <button onClick={onClose} style={{ background: '#333', padding: '8px', borderRadius: '50%', color: 'white' }}>X</button>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-          <button
-            onClick={() => setDisplayMonth(new Date(displayMonth.getFullYear(), displayMonth.getMonth() - 1, 1))}
-            style={{ background: 'rgba(255,255,255,0.1)', color: 'white', padding: '6px 10px', borderRadius: '10px' }}
-          >
-            Prev
-          </button>
-          <div style={{ fontWeight: 700 }}>{monthLabel}</div>
-          <button
-            onClick={() => setDisplayMonth(new Date(displayMonth.getFullYear(), displayMonth.getMonth() + 1, 1))}
-            style={{ background: 'rgba(255,255,255,0.1)', color: 'white', padding: '6px 10px', borderRadius: '10px' }}
-          >
-            Next
-          </button>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px', marginBottom: '10px' }}>
-          {['S','M','T','W','T','F','S'].map(d => (
-            <div key={d} className="text-sm" style={{ textAlign: 'center' }}>{d}</div>
-          ))}
-          {days.map((day, idx) => {
-            if (!day) return <div key={`e-${idx}`} />
-            const dateObj = new Date(displayMonth.getFullYear(), displayMonth.getMonth(), day)
-            const selected = isSameDay(dateObj, pickedDate)
-            const isToday = isSameDay(dateObj, today)
-            return (
-              <button
-                key={`${displayMonth.getMonth()}-${day}`}
-                onClick={() => setPickedDate(dateObj)}
-                style={{
-                  padding: '8px 0',
-                  borderRadius: '10px',
-                  background: selected ? '#00E5FF' : 'rgba(255,255,255,0.08)',
-                  color: selected ? 'black' : 'white',
-                  border: isToday && !selected ? '1px solid #00E5FF' : 'none'
-                }}
-              >
-                {day}
-              </button>
-            )
-          })}
-        </div>
-
-        <div style={{ marginTop: '8px', marginBottom: '10px', fontWeight: 600 }}>Time</div>
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
-          <button
-            onClick={() => setPickedPeriod('AM')}
-            style={{
-              flex: 1,
-              padding: '8px',
-              borderRadius: '12px',
-              background: pickedPeriod === 'AM' ? '#00E5FF' : 'rgba(255,255,255,0.08)',
-              color: pickedPeriod === 'AM' ? 'black' : 'white',
-              fontWeight: 600
-            }}
-          >
-            AM
-          </button>
-          <button
-            onClick={() => setPickedPeriod('PM')}
-            style={{
-              flex: 1,
-              padding: '8px',
-              borderRadius: '12px',
-              background: pickedPeriod === 'PM' ? '#00E5FF' : 'rgba(255,255,255,0.08)',
-              color: pickedPeriod === 'PM' ? 'black' : 'white',
-              fontWeight: 600
-            }}
-          >
-            PM
-          </button>
-        </div>
-        <div style={{ flex: 1, overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-          {timeSlots.map(t => {
-            const candidate = to24Time(t.hour, t.minute, pickedPeriod)
-            const isSelected = pickedTime === candidate
-            return (
-            <button
-              key={t.label}
-              onClick={() => setPickedTime(candidate)}
-              style={{
-                padding: '10px 0',
-                borderRadius: '10px',
-                background: isSelected ? '#00E5FF' : 'rgba(255,255,255,0.08)',
-                color: isSelected ? 'black' : 'white',
-                fontWeight: 600
-              }}
-            >
-              {t.label}
-            </button>
-            )
-          })}
-        </div>
-
-        <button
-          onClick={onConfirm}
-          style={{
-            marginTop: '14px',
-            background: '#00E5FF',
-            color: 'black',
-            padding: '12px',
-            borderRadius: '999px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: '100%',
-            fontWeight: 700
-          }}
-        >
-          Confirm Date & Time
-        </button>
-      </div>
-    </div>
-  )
-}
-
-function getTimeSlots(stepMinutes = 30) {
-  const slots = []
-  for (let h = 1; h <= 12; h++) {
-    for (let m = 0; m < 60; m += stepMinutes) {
-      const label = `${h}:${String(m).padStart(2, '0')}`
-      slots.push({ hour: h, minute: m, label })
-    }
-  }
-  return slots
-}
-
-function to24Hour(hour12, period) {
-  if (period === 'AM') return hour12 === 12 ? 0 : hour12
-  return hour12 === 12 ? 12 : hour12 + 12
-}
-
-function to24Time(hour12, minute, period) {
-  const hour24 = to24Hour(hour12, period)
-  return `${String(hour24).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
-}
-
-function buildCalendarDays(monthDate) {
-  const year = monthDate.getFullYear()
-  const month = monthDate.getMonth()
-  const firstDay = new Date(year, month, 1)
-  const startWeekday = firstDay.getDay()
-  const daysInMonth = new Date(year, month + 1, 0).getDate()
-  const cells = []
-  for (let i = 0; i < startWeekday; i++) cells.push(null)
-  for (let day = 1; day <= daysInMonth; day++) cells.push(day)
-  return cells
-}
+export default Dashboard

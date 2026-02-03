@@ -13,6 +13,8 @@ body {
   font-family: 'Inter', sans-serif;
   min-height: 100svh;
   -webkit-font-smoothing: antialiased;
+  background-color: black;
+  color: white;
 }
 
 *, *::before, *::after {
@@ -45,9 +47,6 @@ body {
 }
 
 #root {
-  max-width: 500px; /* Tighter mobile width */
-  margin: 0 auto;
-  padding: 20px;
   height: 100%;
   box-sizing: border-box;
   display: flex;
@@ -122,4 +121,53 @@ body {
   background: linear-gradient(to right, #FF0055, #FF5500);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+}
+
+:root {
+  /* Rose (Primary/Red) */
+  --color-rose-300: #fda4af;
+  --color-rose-500: #f43f5e;
+  --color-rose-600: #e11d48;
+
+  /* Indigo (Secondary/Blue) */
+  --color-indigo-400: #818cf8;
+  --color-indigo-500: #6366f1;
+
+  /* Amber (Accent/Yellow) */
+  --color-amber-300: #fcd34d;
+  --color-amber-400: #fbbf24;
+
+  /* Semantic Mappings */
+  --theme-primary: var(--color-rose-600);
+  --theme-secondary: var(--color-indigo-500);
+  --theme-accent: var(--color-amber-400);
+  --theme-primary-shadow: rgba(225, 29, 72, 0.4);
+}
+
+:root {
+  /* Rose (Primary/Red) */
+  --color-rose-300: #fda4af;
+  --color-rose-500: #f43f5e;
+  --color-rose-600: #e11d48;
+
+  /* Indigo (Secondary/Blue) */
+  --color-indigo-400: #818cf8;
+  --color-indigo-500: #6366f1;
+
+  /* Amber (Accent/Yellow) */
+  --color-amber-300: #fcd34d;
+  --color-amber-400: #fbbf24;
+  --color-amber-500: #f59e0b;
+
+  /* Semantic Mappings */
+  --theme-primary: var(--color-rose-600);
+  --theme-secondary: var(--color-indigo-500);
+  --theme-accent: var(--color-amber-400);
+  --theme-primary-shadow: rgba(225, 29, 72, 0.4);
+}
+
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
 }

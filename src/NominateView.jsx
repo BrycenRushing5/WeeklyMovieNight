@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from './supabaseClient'
-import { AnimatePresence } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import { 
   Search, Plus, Minus, Heart, Clock, Users, ChevronRight, ChevronLeft, 
-  X, Check, Sparkles, MoreHorizontal, Film, Ticket, MapPin, SquarePen, Star
+  X, Check, Sparkles, MoreHorizontal, Film, Ticket, MapPin, SquarePen, Star, Filter
 } from 'lucide-react'
 import { POSTER_BASE_URL } from './tmdbClient'
 import LoadingSpinner from './LoadingSpinner'
@@ -18,7 +18,7 @@ export default function NominateView() {
   const [userId, setUserId] = useState(null)
   
   // --- State Management ---
-  const [activeTab, setActiveTab] = useState('search') // 'search', 'watchlist', 'history', 'theater'
+  const [activeIndex, setActiveIndex] = useState(0)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState([])
   const [nominations, setNominations] = useState([]) // Current event nominations
@@ -46,8 +46,36 @@ export default function NominateView() {
   const [manualGenres, setManualGenres] = useState([])
   const [selectedMovie, setSelectedMovie] = useState(null)
 
+  // Watchlist Filter State
+  const [watchlistSearchQuery, setWatchlistSearchQuery] = useState('')
+  const [watchlistFilterGenre, setWatchlistFilterGenre] = useState('')
+  const [watchlistFilterScore, setWatchlistFilterScore] = useState(0)
+  const [showWatchlistFilters, setShowWatchlistFilters] = useState(false)
+
+  // Filter State
+  const [showFilters, setShowFilters] = useState(false)
+  const [filterGenre, setFilterGenre] = useState("")
+  const [filterScore, setFilterScore] = useState(0)
+
+  // Swipe Refs
+  const containerRef = useRef(null)
+  const [containerWidth, setContainerWidth] = useState(window.innerWidth)
+  const [dragConstraints, setDragConstraints] = useState({ 
+    left: -(window.innerWidth * 3), 
+    right: 0 
+  })
+
+  // Tab Scroll Refs
+  const searchScrollRef = useRef(null)
+  const watchlistScrollRef = useRef(null)
+  const historyScrollRef = useRef(null)
+  const theaterScrollRef = useRef(null)
+
   const searchTimeout = useRef(null)
   const theaterSearchTimeout = useRef(null)
+
+  const tabs = ['search', 'watchlist', 'history', 'theater']
+  const activeTab = tabs[activeIndex]
 
   const manualScoreNum = parseInt(manualScore, 10)
   const manualScoreColor = !isNaN(manualScoreNum)
@@ -71,6 +99,32 @@ export default function NominateView() {
         theaterSearchTimeout.current = setTimeout(() => performTheaterSearch(theaterSearchQuery), 300)
     }
   }, [theaterSearchQuery, activeTab])
+
+  // Calculate drag constraints
+  useEffect(() => {
+    const handleResize = () => {
+      if (containerRef.current) {
+        const width = containerRef.current.offsetWidth
+        setContainerWidth(width)
+        setDragConstraints({ left: -(width * 3), right: 0 })
+      }
+    }
+    // Call once to ensure sync with ref if it differs from window
+    handleResize()
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  // Scroll inactive tabs to top when switching
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (activeIndex !== 0 && searchScrollRef.current) searchScrollRef.current.scrollTop = 0
+      if (activeIndex !== 1 && watchlistScrollRef.current) watchlistScrollRef.current.scrollTop = 0
+      if (activeIndex !== 2 && historyScrollRef.current) historyScrollRef.current.scrollTop = 0
+      if (activeIndex !== 3 && theaterScrollRef.current) theaterScrollRef.current.scrollTop = 0
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [activeIndex])
 
   async function loadInitialData() {
     setLoading(true)
@@ -242,6 +296,29 @@ export default function NominateView() {
     setTheaterSearchResults(data || [])
   }
 
+  // Helper: Apply Filters
+  function applyFilters(list) {
+    return list.filter(m => {
+        const score = m.rt_score === null ? 100 : m.rt_score
+        const scorePass = score >= filterScore
+        const movieGenres = Array.isArray(m.genre) ? m.genre : (m.genre ? [m.genre] : [])
+        const genrePass = !filterGenre || movieGenres.includes(filterGenre)
+        return scorePass && genrePass
+    })
+  }
+
+  // Helper: Apply Watchlist Filters
+  function getFilteredWatchlist(list) {
+    return list.filter(m => {
+        const score = m.rt_score === null ? 100 : m.rt_score
+        const scorePass = score >= watchlistFilterScore
+        const movieGenres = Array.isArray(m.genre) ? m.genre : (m.genre ? [m.genre] : [])
+        const genrePass = !watchlistFilterGenre || movieGenres.includes(watchlistFilterGenre)
+        const titlePass = !watchlistSearchQuery || m.title.toLowerCase().includes(watchlistSearchQuery.toLowerCase())
+        return scorePass && genrePass && titlePass
+    })
+  }
+
   // --- Actions ---
 
   const toggleNomination = async (movie, isTheater = false, theaterDetails = null) => {
@@ -370,6 +447,19 @@ export default function NominateView() {
     setManualGenres([])
   }
 
+  // --- Swipe Handler ---
+  const handleDragEnd = (e, { offset, velocity }) => {
+    const swipe = offset.x
+    const threshold = 50
+    const velocityThreshold = 500
+    
+    if ((swipe < -threshold || velocity.x < -velocityThreshold) && activeIndex < 3) {
+      setActiveIndex(prev => prev + 1)
+    } else if ((swipe > threshold || velocity.x > velocityThreshold) && activeIndex > 0) {
+      setActiveIndex(prev => prev - 1)
+    }
+  }
+
   // --- Components ---
 
   const MovieCard = ({ movie, context = 'search', isTheater = false, onClick, showActions = true, onSelect, hideNominate = false }) => {
@@ -379,11 +469,9 @@ export default function NominateView() {
     const score = movie.rt_score || movie.vote_average ? Math.round(movie.rt_score || (movie.vote_average * 10)) + '%' : null
 
     return (
-      <div className="bg-[#121214] border border-[#2a2a2e] rounded-xl p-3 flex gap-3 mb-3 group hover:border-rose-500/50 transition-colors">
-        <div className="flex gap-3 flex-1 min-w-0 cursor-pointer" onClick={onClick}>
-        
+      <div className="bg-slate-900/40 border border-white/5 rounded-xl p-3 flex gap-3 mb-3 group hover:border-rose-500/50 transition-colors">
         {/* Poster - Clickable */}
-        <div className="w-20 h-28 shrink-0 rounded-lg bg-slate-800 flex items-center justify-center relative overflow-hidden">
+        <div className="w-20 h-28 shrink-0 rounded-lg bg-slate-800 flex items-center justify-center relative overflow-hidden cursor-pointer" onClick={onClick}>
           {posterUrl ? (
             <img src={posterUrl} alt={movie.title} className="w-full h-full object-cover" />
           ) : (
@@ -394,11 +482,11 @@ export default function NominateView() {
           )}
         </div>
 
-        <div className="flex-1 flex flex-col justify-between py-1 min-w-0">
-          <div>
+        <div className="flex-1 flex flex-col min-w-0">
+          <div className="cursor-pointer" onClick={onClick}>
             <div className="flex justify-between items-start gap-2">
-              <h3 className="font-bold text-slate-100 text-sm leading-tight truncate w-full">{movie.title}</h3>
-              {score && <span className="text-[10px] text-emerald-400 font-medium shrink-0">{score}</span>}
+              <h3 className="font-bold text-slate-100 text-sm leading-tight">{movie.title}</h3>
+              {score && <span className="text-[10px] text-emerald-400 font-medium shrink-0 bg-emerald-400/10 px-1.5 py-0.5 rounded">{score}</span>}
             </div>
             <p className="text-xs text-slate-500 mt-1">{movie.year || (movie.release_date ? movie.release_date.substring(0, 4) : '')}</p>
             {context === 'crew' && movie.addedByNames?.length > 0 && (
@@ -407,13 +495,11 @@ export default function NominateView() {
                 In {movie.addedByNames.join(', ')}'s watchlist
               </div>
             )}
-            {movie.description && <p className="text-[10px] text-slate-600 mt-2 line-clamp-2 leading-relaxed">{movie.description}</p>}
+            {movie.description && <p className="text-[10px] text-slate-400 mt-2 leading-relaxed line-clamp-2">{movie.description}</p>}
           </div>
-        </div>
-        </div>
         
         {showActions && (
-          <div className="flex items-center justify-end gap-3 mt-2">
+          <div className="flex items-center justify-end gap-3 mt-auto pt-2">
             {/* Watchlist Action */}
             <button 
               onClick={(e) => toggleWatchlist(e, movie)}
@@ -462,6 +548,7 @@ export default function NominateView() {
             )}
           </div>
         )}
+        </div>
       </div>
     )
   }
@@ -469,9 +556,9 @@ export default function NominateView() {
   if (loading) return <LoadingSpinner label="Loading nominations..." />
 
   return (
-    <div className="h-screen w-full bg-slate-950 text-white flex flex-col overflow-hidden">
+    <div className="fixed inset-0 w-full h-full bg-gradient-to-b from-slate-950 via-slate-900 to-black text-white flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="px-4 py-4 flex flex-col gap-4 bg-gradient-to-b from-black/80 to-transparent z-20 shrink-0">
+      <div className="px-4 py-4 flex flex-col gap-4 z-20 shrink-0">
         <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
                 <button onClick={() => navigate(`/room/${code}`)} className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors">
@@ -485,11 +572,11 @@ export default function NominateView() {
 
         {/* Navigation Tabs */}
         <div className="flex p-1 bg-white/10 rounded-xl overflow-x-auto">
-          {['search', 'watchlist', 'history', 'theater'].map((tab) => (
+          {tabs.map((tab, idx) => (
             <button
               key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`flex-1 py-2 px-3 text-xs font-bold rounded-lg capitalize transition-all whitespace-nowrap ${
+              onClick={() => setActiveIndex(idx)}
+              className={`flex-1 py-2 px-3 text-xs font-bold rounded-lg capitalize transition-all whitespace-nowrap z-10 ${
                 activeTab === tab
                   ? 'bg-white/20 text-white shadow-sm'
                   : 'text-slate-500 hover:text-slate-300'
@@ -502,25 +589,84 @@ export default function NominateView() {
       </div>
 
       {/* Main Content Area */}
-      <div className="px-4 py-4 flex-1 overflow-y-auto pb-32 touch-auto">
+      <div className="flex-1 relative overflow-hidden" ref={containerRef} style={{ perspective: 1000 }}>
+        <motion.div
+            className="flex h-full"
+            style={{ width: '400%', touchAction: 'pan-y' }}
+            drag="x"
+            dragConstraints={dragConstraints}
+            dragElastic={0.1}
+            dragDirectionLock
+            dragMomentum={false}
+            onDragEnd={handleDragEnd}
+            animate={{ x: -activeIndex * containerWidth }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+        >
         
         {/* --- SEARCH TAB --- */}
-        {activeTab === 'search' && (
-          <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-            <div className="relative">
+        <div ref={searchScrollRef} className="w-[100vw] h-full overflow-y-auto px-4 pb-32 scrollbar-hide">
+          <div className="space-y-4 pt-2">
+            <div className="flex gap-2">
+            <form onSubmit={(e) => { e.preventDefault(); document.activeElement.blur() }} className="relative flex-1">
               <input 
                 type="text"
+                enterKeyHint="search"
                 placeholder="Search movies..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-[#121214] border border-[#2a2a2e] rounded-xl py-3 pl-11 pr-4 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition-all"
+                className="w-full bg-slate-900 border border-white/10 rounded-xl py-3 pl-11 pr-10 text-base text-white placeholder-slate-600 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition-all"
               />
-              <Search className="absolute left-4 top-3.5 text-slate-600" size={18} />
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-600" size={18} />
+              {searchQuery && (
+                <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                >
+                    <X size={18} />
+                </button>
+              )}
+            </form>
+            <button 
+                onClick={() => setShowFilters(!showFilters)}
+                className={`p-3 rounded-xl border transition-colors ${showFilters ? 'bg-rose-500/20 border-rose-500 text-rose-500' : 'bg-slate-900 border-white/10 text-slate-400'}`}
+            >
+                <Filter size={20} />
+            </button>
             </div>
+
+            {showFilters && (
+                <div className="p-4 bg-slate-900 border border-white/10 rounded-xl space-y-4">
+                    <div>
+                        <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Genre</label>
+                        <div className="flex flex-wrap gap-2">
+                            <button onClick={() => setFilterGenre("")} className={`px-3 py-1 rounded-full text-xs font-bold border ${!filterGenre ? 'bg-white text-black border-white' : 'border-white/10 text-slate-400'}`}>All</button>
+                            {DEFAULT_GENRES.map(g => (
+                                <button 
+                                    key={g}
+                                    onClick={() => setFilterGenre(g === filterGenre ? "" : g)}
+                                    className={`px-3 py-1 rounded-full text-xs font-bold border ${g === filterGenre ? 'bg-rose-500 text-white border-rose-500' : 'border-white/10 text-slate-400'}`}
+                                >
+                                    {g}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Min Score: {filterScore}%</label>
+                        <input 
+                            type="range" min="0" max="100" value={filterScore} onChange={(e) => setFilterScore(Number(e.target.value))}
+                            className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer"
+                            onPointerDownCapture={(e) => e.stopPropagation()}
+                            style={{ background: `linear-gradient(to right, #f43f5e ${filterScore}%, #1e293b ${filterScore}%)` }}
+                        />
+                    </div>
+                </div>
+            )}
 
             <button 
               onClick={() => setShowManualEntry(true)}
-              className="w-full py-2.5 px-4 bg-[#121214]/50 border border-[#2a2a2e] rounded-lg flex items-center justify-between group hover:bg-[#121214] transition-colors"
+              className="w-full py-2.5 px-4 bg-slate-900/50 border border-white/10 rounded-lg flex items-center justify-between group hover:bg-slate-900 transition-colors"
             >
               <div className="flex items-center gap-2">
                 <div className="p-1 bg-[#2a2a2e] rounded text-slate-400 group-hover:text-white transition-colors">
@@ -541,7 +687,7 @@ export default function NominateView() {
                 {isSearching ? (
                     <div className="text-center text-slate-500 py-8">Searching...</div>
                 ) : searchResults.length > 0 ? (
-                    searchResults.map(movie => (
+                    applyFilters(searchResults).map(movie => (
                         <MovieCard key={movie.id} movie={movie} onClick={() => setSelectedMovie(movie)} />
                     ))
                 ) : (
@@ -555,11 +701,54 @@ export default function NominateView() {
               </div>
             )}
           </div>
-        )}
+        </div>
 
         {/* --- WATCHLIST TAB --- */}
-        {activeTab === 'watchlist' && (
-          <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+        <div ref={watchlistScrollRef} className="w-[100vw] h-full overflow-y-auto px-4 pb-32 scrollbar-hide">
+          <div className="space-y-4 pt-2">
+            {/* Watchlist Search & Filter */}
+            <div className="flex gap-2">
+                <div className="relative flex-1">
+                    <input 
+                        type="text"
+                        placeholder="Search watchlist..."
+                        value={watchlistSearchQuery}
+                        onChange={(e) => setWatchlistSearchQuery(e.target.value)}
+                        className="w-full bg-slate-900 border border-white/10 rounded-xl py-3 pl-11 pr-10 text-base text-white placeholder-slate-600 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition-all"
+                    />
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-600" size={18} />
+                    {watchlistSearchQuery && (
+                        <button onClick={() => setWatchlistSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500"><X size={14} /></button>
+                    )}
+                </div>
+                <button onClick={() => setShowWatchlistFilters(!showWatchlistFilters)} className={`p-3 rounded-xl border transition-colors ${showWatchlistFilters ? 'bg-rose-500/20 border-rose-500 text-rose-500' : 'bg-slate-900 border-white/10 text-slate-400'}`}>
+                    <Filter size={20} />
+                </button>
+            </div>
+
+            {showWatchlistFilters && (
+                <div className="p-4 bg-slate-900 border border-white/10 rounded-xl space-y-4">
+                    <div>
+                        <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Genre</label>
+                        <div className="flex flex-wrap gap-2">
+                            <button onClick={() => setWatchlistFilterGenre("")} className={`px-3 py-1 rounded-full text-xs font-bold border ${!watchlistFilterGenre ? 'bg-white text-black border-white' : 'border-white/10 text-slate-400'}`}>All</button>
+                            {DEFAULT_GENRES.map(g => (
+                                <button key={g} onClick={() => setWatchlistFilterGenre(g === watchlistFilterGenre ? "" : g)} className={`px-3 py-1 rounded-full text-xs font-bold border ${g === watchlistFilterGenre ? 'bg-rose-500 text-white border-rose-500' : 'border-white/10 text-slate-400'}`}>{g}</button>
+                            ))}
+                        </div>
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Min Score: {watchlistFilterScore}%</label>
+                        <input 
+                            type="range" min="0" max="100" value={watchlistFilterScore} onChange={(e) => setWatchlistFilterScore(Number(e.target.value))} 
+                            className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer" 
+                            onPointerDownCapture={(e) => e.stopPropagation()}
+                            style={{ background: `linear-gradient(to right, #f43f5e ${watchlistFilterScore}%, #1e293b ${watchlistFilterScore}%)` }} 
+                        />
+                    </div>
+                </div>
+            )}
+
             <div className="flex bg-white/5 p-1 rounded-xl mb-4">
                 <button 
                     onClick={() => setWatchlistScope('mine')}
@@ -577,8 +766,8 @@ export default function NominateView() {
 
             {watchlistScope === 'mine' && (
                 <div>
-                    {myWatchlistMovies.length === 0 && <p className="text-sm text-slate-600 italic text-center py-8">Your watchlist is empty.</p>}
-                    {myWatchlistMovies.map(movie => (
+                    {getFilteredWatchlist(myWatchlistMovies).length === 0 && <p className="text-sm text-slate-600 italic text-center py-8">No movies found.</p>}
+                    {getFilteredWatchlist(myWatchlistMovies).map(movie => (
                         <MovieCard key={movie.id} movie={movie} onClick={() => setSelectedMovie(movie)} />
                     ))}
                 </div>
@@ -589,17 +778,17 @@ export default function NominateView() {
               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
                 <Users size={12} /> Crew Favorites
               </h3>
-              {crewWatchlist.length === 0 && <p className="text-sm text-slate-600 italic">No crew favorites found.</p>}
-              {crewWatchlist.map(movie => (
+              {getFilteredWatchlist(crewWatchlist).length === 0 && <p className="text-sm text-slate-600 italic">No crew favorites found.</p>}
+              {getFilteredWatchlist(crewWatchlist).map(movie => (
                 <MovieCard key={movie.id} movie={movie} context="crew" onClick={() => setSelectedMovie(movie)} />
               ))}
             </div>)}
           </div>
-        )}
+        </div>
 
         {/* --- HISTORY TAB --- */}
-        {activeTab === 'history' && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+        <div ref={historyScrollRef} className="w-[100vw] h-full overflow-y-auto px-4 pb-32 scrollbar-hide">
+          <div className="space-y-6 pt-2">
              
              {/* 1. Smart Import (Events) */}
              <div className="bg-gradient-to-r from-blue-900/20 to-indigo-900/20 border border-blue-500/20 rounded-xl p-4">
@@ -655,11 +844,11 @@ export default function NominateView() {
                 )}
              </div>
           </div>
-        )}
+        </div>
 
         {/* --- THEATER TAB --- */}
-        {activeTab === 'theater' && (
-            <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+        <div ref={theaterScrollRef} className="w-[100vw] h-full overflow-y-auto px-4 pb-32 scrollbar-hide">
+            <div className="space-y-4 pt-2">
                 <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4">
                     <div className="flex items-center gap-2 mb-2 text-amber-500">
                         <Ticket size={18} />
@@ -685,14 +874,26 @@ export default function NominateView() {
                     <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Select Movie</h3>
                     {!theaterSelectedMovie ? (
                         <>
-                            <input 
-                                type="text"
-                                placeholder="Search movie for trip..."
-                                value={theaterSearchQuery}
-                                onChange={(e) => setTheaterSearchQuery(e.target.value)}
-                                className="w-full bg-[#121214] border border-[#2a2a2e] rounded-xl py-3 pl-11 pr-4 text-sm text-white focus:border-amber-500 outline-none"
-                            />
-                            <Search className="absolute left-4 top-9 text-slate-600" size={18} />
+                            <form onSubmit={(e) => { e.preventDefault(); document.activeElement.blur() }} className="relative">
+                                <input 
+                                    type="text"
+                                    enterKeyHint="search"
+                                    placeholder="Search movie for trip..."
+                                    value={theaterSearchQuery}
+                                    onChange={(e) => setTheaterSearchQuery(e.target.value)}
+                                    className="w-full bg-slate-900 border border-white/10 rounded-xl py-3 pl-11 pr-10 text-base text-white placeholder-slate-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all"
+                                />
+                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-600" size={18} />
+                                {theaterSearchQuery && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setTheaterSearchQuery('')}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                                    >
+                                        <X size={18} />
+                                    </button>
+                                )}
+                            </form>
                             
                             <div className="mt-3 space-y-2">
                                 {theaterSearchResults.map(movie => (
@@ -735,12 +936,13 @@ export default function NominateView() {
                     </button>
                 )}
             </div>
-        )}
+        </div>
+        </motion.div>
 
       </div>
 
       {/* --- BOTTOM ACTION BAR (The Ballot) --- */}
-      <div className={`fixed bottom-6 left-4 right-4 transition-all duration-500 z-50 transform`}>
+      <div className={`fixed bottom-4 left-4 right-4 transition-all duration-500 z-50 transform`}>
         <div className={`bg-[#121214] rounded-2xl border border-[#2a2a2e] shadow-2xl overflow-hidden transition-all duration-300 ${isBallotOpen ? 'max-h-[80vh]' : 'max-h-20'}`}>
           
           {/* Bar Header */}
@@ -777,7 +979,11 @@ export default function NominateView() {
             ) : (
               <div className="space-y-2 max-h-60 overflow-y-auto">
                 {nominations.filter(n => n.nominated_by === userId).map((nom, idx) => (
-                  <div key={nom.nominationId} className="flex items-center justify-between bg-[#050505] p-2 rounded-lg border border-[#2a2a2e]">
+                  <div 
+                    key={nom.nominationId} 
+                    onClick={() => setSelectedMovie(nom)}
+                    className="flex items-center justify-between bg-[#050505] p-2 rounded-lg border border-[#2a2a2e] cursor-pointer hover:bg-slate-800 transition-colors"
+                  >
                     <div className="flex items-center gap-3 min-w-0">
                       <span className="text-xs font-bold text-slate-600 w-4 shrink-0">{idx + 1}.</span>
                       <div className="min-w-0">
@@ -791,7 +997,7 @@ export default function NominateView() {
                     </div>
                     <button 
                       onClick={(e) => { e.stopPropagation(); toggleNomination(nom, nom.nominationType === 'theater'); }}
-                      className="text-slate-500 hover:text-red-400 p-1 shrink-0"
+                      className="text-slate-500 hover:text-rose-500 p-1 shrink-0"
                     >
                       <X size={14} />
                     </button>
@@ -799,6 +1005,12 @@ export default function NominateView() {
                 ))}
               </div>
             )}
+            <button 
+              onClick={() => navigate(`/room/${code}`)}
+              className="w-full mt-4 bg-rose-500 text-white font-bold py-3 rounded-xl hover:bg-rose-600 transition-colors"
+            >
+              Done Nominating
+            </button>
           </div>
 
         </div>
@@ -951,7 +1163,7 @@ function ExpandedCard({ movie, isNominated, inWatchlist, onNominate, onWatchlist
                         {isSelectionMode ? (
                             isSelected ? <><Check size={24} /> Selected</> : <><Check size={24} /> Select</>
                         ) : (
-                            isNominated ? <><Check size={24} /> Added</> : <><Plus size={24} /> Nominate</>
+                            isNominated ? <><Check size={24} /> Selected</> : <><Plus size={24} /> Nominate</>
                         )}
                     </button>
                 </div>

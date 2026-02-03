@@ -1,613 +1,821 @@
-import { useEffect, useState } from "react"
-import { Link } from "react-router-dom"
+import { useEffect, useState, useRef } from "react"
+import { Link, useNavigate } from "react-router-dom"
 import { supabase } from "./supabaseClient"
-import MovieCard from "./MovieCard"
 import SearchMovies from "./SearchMovies"
-import { AnimatePresence } from "framer-motion"
-import { LogOut, Plus, User } from "lucide-react"
+import { AnimatePresence, motion, useMotionValue, useTransform } from "framer-motion"
+import { 
+  LogOut, Plus, User, Home, Film, Lightbulb, 
+  Settings, Filter, X, Calendar, MapPin, 
+  ChevronRight, Star, Trash2, MoreHorizontal, Search,
+  Users, Trophy, ChevronDown, Heart, Check
+} from "lucide-react"
 import DateTimePickerSheet from "./DateTimePickerSheet"
+import { POSTER_BASE_URL } from './tmdbClient'
+import LoadingSpinner from './LoadingSpinner'
+
+const DEFAULT_GENRES = ['Action', 'Adventure', 'Comedy', 'Documentary', 'Holiday', 'Horror', 'Romance', 'Sci-Fi', 'Mystery & thriller', 'Fantasy']
 
 const Dashboard = ({ session }) => {
-  const [activeTab, setActiveTab] = useState("events")
+  const navigate = useNavigate()
+  // Tabs: 0: Ideas, 1: Hub, 2: Watchlist
+  const [activeIndex, setActiveIndex] = useState(1)
+  
+  // Data State
   const [events, setEvents] = useState([])
   const [eventsLoading, setEventsLoading] = useState(true)
-  const [eventsError, setEventsError] = useState("")
   const [crews, setCrews] = useState([])
-  const [crewsLoading, setCrewsLoading] = useState(true)
-  const [crewsError, setCrewsError] = useState("")
+  const [watchlist, setWatchlist] = useState([])
+  const [watchlistLoading, setWatchlistLoading] = useState(true)
+  
+  // UI State
+  const [showProfileMenu, setShowProfileMenu] = useState(false)
+  const [showPlusMenu, setShowPlusMenu] = useState(false)
+  const [showCrewManager, setShowCrewManager] = useState(false)
   const [showCreateEvent, setShowCreateEvent] = useState(false)
+  const [showWatchlistSearch, setShowWatchlistSearch] = useState(false)
+  const [selectedMovie, setSelectedMovie] = useState(null)
+  const [showNominateModal, setShowNominateModal] = useState(false)
+  const [movieToNominate, setMovieToNominate] = useState(null)
+  const [showRemoveModal, setShowRemoveModal] = useState(false)
+  const [movieToRemove, setMovieToRemove] = useState(null)
+  const [nominationError, setNominationError] = useState("")
+  const [nominatedEventIds, setNominatedEventIds] = useState(new Set())
+  
+  // Filter State
+  const [showFilters, setShowFilters] = useState(false)
+  const [filterGenre, setFilterGenre] = useState("")
+  const [filterScore, setFilterScore] = useState(0)
+  const [watchSearchTerm, setWatchSearchTerm] = useState("")
+
+  // Create Event State
   const [newEventTitle, setNewEventTitle] = useState("")
   const [newEventDate, setNewEventDate] = useState("")
   const [newEventLocation, setNewEventLocation] = useState("")
   const [selectedCrewId, setSelectedCrewId] = useState("")
   const [creatingEvent, setCreatingEvent] = useState(false)
-  const [showCreateCrew, setShowCreateCrew] = useState(false)
+  const [shakeDate, setShakeDate] = useState(false)
+  
+  // Create Crew State
   const [newCrewName, setNewCrewName] = useState("")
   const [creatingCrew, setCreatingCrew] = useState(false)
+
+  // Date Picker
   const [showDateTimePicker, setShowDateTimePicker] = useState(false)
   const [pickedDate, setPickedDate] = useState(null)
   const [pickedTime, setPickedTime] = useState("")
   const [pickedPeriod, setPickedPeriod] = useState("PM")
-  const [displayMonth, setDisplayMonth] = useState(() => {
-    const now = new Date()
-    return new Date(now.getFullYear(), now.getMonth(), 1)
-  })
-  const [watchlist, setWatchlist] = useState([])
-  const [watchlistLoading, setWatchlistLoading] = useState(true)
-  const [watchlistError, setWatchlistError] = useState("")
-  const [watchFilter, setWatchFilter] = useState("")
-  const [showWatchlistSearch, setShowWatchlistSearch] = useState(false)
+  const [displayMonth, setDisplayMonth] = useState(() => new Date())
 
-  const loadEvents = async (isActive = () => true) => {
-    const userId = session?.user?.id
-    if (!userId) {
-      if (isActive()) setEventsLoading(false)
-      return
-    }
-    setEventsLoading(true)
-    setEventsError("")
+  // Swipe Logic
+  const x = useMotionValue(0)
+  const containerRef = useRef(null)
+  
+  // Tab Scroll Refs
+  const ideasRef = useRef(null)
+  const hubRef = useRef(null)
+  const watchlistRef = useRef(null)
+  const [dragConstraints, setDragConstraints] = useState({ left: 0, right: 0 })
 
-    const [groupsResult, attendeesResult] = await Promise.all([
-      supabase.from("group_members").select("group_id").eq("user_id", userId),
-      supabase.from("event_attendees").select("event_id").eq("user_id", userId),
-    ])
-
-    if (groupsResult.error || attendeesResult.error) {
-      if (isActive()) {
-        setEventsError("Unable to load events right now.")
-        setEventsLoading(false)
-      }
-      return
-    }
-
-    const groupIds = (groupsResult.data || [])
-      .map((row) => row.group_id)
-      .filter(Boolean)
-    const eventIds = (attendeesResult.data || [])
-      .map((row) => row.event_id)
-      .filter(Boolean)
-
-    const [createdResult, groupEventsResult, attendeeEventsResult] = await Promise.all([
-      supabase.from("events").select("*").eq("created_by", userId),
-      groupIds.length
-        ? supabase.from("events").select("*").in("group_id", groupIds)
-        : Promise.resolve({ data: [] }),
-      eventIds.length
-        ? supabase.from("events").select("*").in("id", eventIds)
-        : Promise.resolve({ data: [] }),
-    ])
-
-    if (createdResult.error || groupEventsResult.error || attendeeEventsResult.error) {
-      if (isActive()) {
-        setEventsError("Unable to load events right now.")
-        setEventsLoading(false)
-      }
-      return
-    }
-
-    const merged = new Map()
-    ;[createdResult.data, groupEventsResult.data, attendeeEventsResult.data].forEach(
-      (list) => {
-        (list || []).forEach((event) => {
-          if (event?.id && !merged.has(event.id)) {
-            merged.set(event.id, event)
-          }
-        })
-      }
-    )
-
-    const sorted = Array.from(merged.values()).sort((a, b) => {
-      if (!a.event_date && !b.event_date) return 0
-      if (!a.event_date) return 1
-      if (!b.event_date) return -1
-      return new Date(a.event_date) - new Date(b.event_date)
-    })
-
-    if (isActive()) {
-      setEvents(sorted)
-      setEventsLoading(false)
-    }
-  }
-
-  const loadCrews = async (isActive = () => true) => {
-    const userId = session?.user?.id
-    if (!userId) {
-      if (isActive()) setCrewsLoading(false)
-      return
-    }
-    setCrewsLoading(true)
-    setCrewsError("")
-
-    const [membershipResult, createdResult] = await Promise.all([
-      supabase.from("group_members").select("group_id").eq("user_id", userId),
-      supabase.from("groups").select("*").eq("created_by", userId),
-    ])
-
-    let createdGroups = []
-    let createdError = null
-
-    if (createdResult.error) {
-      if (createdResult.error.message?.includes('column "created_by" does not exist')) {
-        createdGroups = []
-      } else {
-        createdError = createdResult.error
-      }
-    } else {
-      createdGroups = createdResult.data || []
-    }
-
-    if (membershipResult.error && createdError) {
-      if (isActive()) {
-        setCrewsError("Unable to load crews right now.")
-        setCrewsLoading(false)
-      }
-      return
-    }
-
-    const groupIds = (membershipResult.data || []).map((row) => row.group_id).filter(Boolean)
-    let memberGroups = []
-
-    if (groupIds.length > 0) {
-      const { data: groupData, error: groupError } = await supabase
-        .from("groups")
-        .select("*")
-        .in("id", groupIds)
-
-      if (groupError && !createdGroups.length) {
-        if (isActive()) {
-          setCrewsError("Unable to load crews right now.")
-          setCrewsLoading(false)
-        }
-        return
-      }
-      memberGroups = groupData || []
-    }
-
-    const merged = new Map()
-    ;[memberGroups, createdGroups].forEach((list) => {
-      (list || []).forEach((group) => {
-        if (group?.id && !merged.has(group.id)) merged.set(group.id, group)
-      })
-    })
-
-    const sorted = Array.from(merged.values()).sort((a, b) => {
-      const left = a?.name || ""
-      const right = b?.name || ""
-      return left.localeCompare(right)
-    })
-
-    if (isActive()) {
-      setCrews(sorted)
-      setCrewsLoading(false)
-    }
-  }
-
-  const loadWatchlist = async (isActive = () => true) => {
-    const userId = session?.user?.id
-    if (!userId) {
-      if (isActive()) setWatchlistLoading(false)
-      return
-    }
-    setWatchlistLoading(true)
-    setWatchlistError("")
-
-    const { data, error } = await supabase
-      .from("user_wishlist")
-      .select("movie:movies (*)")
-      .eq("user_id", userId)
-
-    if (error) {
-      if (isActive()) {
-        setWatchlistError("Unable to load watchlist right now.")
-        setWatchlistLoading(false)
-      }
-      return
-    }
-
-    const movies = (data || []).map((row) => row.movie).filter(Boolean)
-    if (isActive()) {
-      setWatchlist(movies)
-      setWatchlistLoading(false)
-    }
-  }
+  const userId = session?.user?.id
+  const username = session?.user?.user_metadata?.username || session?.user?.user_metadata?.display_name || 'Movie Fan'
 
   useEffect(() => {
-    let active = true
-
-    loadEvents(() => active)
-    loadCrews(() => active)
-    loadWatchlist(() => active)
-    return () => {
-      active = false
+    if (userId) {
+      loadEvents()
+      loadCrews()
+      loadWatchlist()
     }
-  }, [session?.user?.id])
+  }, [userId])
 
-  const formatEventDate = (value) => {
-    if (!value) return "TBD"
-    const date = new Date(value)
-    if (Number.isNaN(date.getTime())) return "TBD"
-    return date.toLocaleDateString()
+  // Scroll inactive tabs to top when switching
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (activeIndex !== 0 && ideasRef.current) ideasRef.current.scrollTop = 0
+      if (activeIndex !== 1 && hubRef.current) hubRef.current.scrollTop = 0
+      if (activeIndex !== 2 && watchlistRef.current) watchlistRef.current.scrollTop = 0
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [activeIndex])
+
+  // Calculate drag constraints manually to avoid Safari layout bugs
+  useEffect(() => {
+    const updateConstraints = () => {
+      if (containerRef.current) {
+        const width = containerRef.current.offsetWidth
+        setDragConstraints({ left: -width * 2, right: 0 })
+      }
+    }
+    updateConstraints()
+    window.addEventListener('resize', updateConstraints)
+    return () => window.removeEventListener('resize', updateConstraints)
+  }, [])
+
+  const loadEvents = async () => {
+    setEventsLoading(true)
+    const { data: groups } = await supabase.from("group_members").select("group_id").eq("user_id", userId)
+    const groupIds = groups?.map(g => g.group_id) || []
+    
+    const { data: attending } = await supabase.from("event_attendees").select("event_id").eq("user_id", userId)
+    const attendingIds = attending?.map(a => a.event_id) || []
+
+    let query = supabase.from("events").select("*")
+    
+    const conditions = [`created_by.eq.${userId}`]
+    if (groupIds.length) conditions.push(`group_id.in.(${groupIds.join(',')})`)
+    if (attendingIds.length) conditions.push(`id.in.(${attendingIds.join(',')})`)
+    
+    query = query.or(conditions.join(','))
+    
+    const { data } = await query
+    
+    if (data) {
+        const sorted = data.sort((a, b) => {
+            if (!a.event_date) return 1
+            if (!b.event_date) return -1
+            return new Date(a.event_date) - new Date(b.event_date)
+        })
+        setEvents(sorted)
+    }
+    setEventsLoading(false)
   }
 
-  const formatDateTimeLabel = (value) => {
-    if (!value) return "Pick date & time"
-    const date = new Date(value)
-    if (Number.isNaN(date.getTime())) return "Pick date & time"
-    return date.toLocaleString([], { weekday: "short", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" })
+  const loadCrews = async () => {
+    const { data: created } = await supabase.from("groups").select("*").eq("created_by", userId)
+    const { data: memberOf } = await supabase.from("group_members").select("group_id, groups(*)").eq("user_id", userId)
+    
+    const allCrews = new Map()
+    created?.forEach(c => allCrews.set(c.id, c))
+    memberOf?.forEach(m => {
+        if (m.groups) allCrews.set(m.groups.id, m.groups)
+    })
+    
+    setCrews(Array.from(allCrews.values()))
   }
+
+  const loadWatchlist = async () => {
+    setWatchlistLoading(true)
+    try {
+        const { data, error } = await supabase
+        .from("user_wishlist")
+        .select("movie:movies (*)")
+        .eq("user_id", userId)
+        .order('added_at', { ascending: false })
+        
+        if (error) throw error
+        
+        if (data) {
+            setWatchlist(data.map(d => d.movie).filter(Boolean))
+        }
+    } catch (err) {
+        console.error("Error loading watchlist:", err)
+    } finally {
+        setWatchlistLoading(false)
+    }
+  }
+
+  // --- DERIVED STATE ---
+
+  const now = new Date()
+  const futureEvents = events.filter(e => !e.event_date || new Date(e.event_date) >= now)
+  const pastEvents = events.filter(e => e.event_date && new Date(e.event_date) < now).reverse()
+  
+  const nextUp = futureEvents[0]
+  const upcoming = futureEvents.slice(1)
+
+  const filteredWatchlist = watchlist.filter(m => {
+    if (!m) return false
+    const title = m.title ? m.title.toLowerCase() : ''
+    const search = watchSearchTerm.toLowerCase()
+    const matchSearch = !search || title.includes(search)
+    const matchGenre = !filterGenre || (m.genre && m.genre.includes(filterGenre))
+    const matchScore = !filterScore || (m.rt_score >= filterScore)
+    return matchSearch && matchGenre && matchScore
+  })
+
+  const uniqueGenres = Array.from(new Set(watchlist.flatMap(m => m.genre || []))).sort()
+
+  // --- ACTIONS ---
+
+  const handleCreateEvent = async () => {
+    if (!newEventTitle.trim()) return
+    if (!newEventDate) {
+        setShakeDate(true)
+        setTimeout(() => setShakeDate(false), 500)
+        if (navigator.vibrate) navigator.vibrate(200)
+        return
+    }
+    setCreatingEvent(true)
+    const { error } = await supabase.from("events").insert([{
+        title: newEventTitle,
+        event_date: newEventDate || null,
+        location_address: newEventLocation || null,
+        group_id: selectedCrewId || null,
+        created_by: userId,
+        status: 'voting'
+    }])
+    
+    setCreatingEvent(false)
+    if (!error) {
+        setShowCreateEvent(false)
+        setNewEventTitle("")
+        setNewEventDate("")
+        setNewEventLocation("")
+        loadEvents()
+    }
+  }
+
+  const handleCreateCrew = async () => {
+    if (!newCrewName.trim()) return
+    setCreatingCrew(true)
+    
+    const { data: group, error } = await supabase.from("groups").insert([{
+        name: newCrewName,
+        created_by: userId
+    }]).select().single()
+
+    if (group && !error) {
+        await supabase.from("group_members").insert([{
+            group_id: group.id,
+            user_id: userId
+        }])
+        setNewCrewName("")
+        loadCrews()
+    }
+    setCreatingCrew(false)
+  }
+
+  const openNominateModal = async (movie) => {
+    setMovieToNominate(movie)
+    setNominationError("")
+    
+    if (userId && futureEvents.length > 0) {
+        const { data } = await supabase
+            .from('nominations')
+            .select('event_id')
+            .eq('movie_id', movie.id)
+            .in('event_id', futureEvents.map(e => e.id))
+        setNominatedEventIds(new Set(data?.map(n => n.event_id) || []))
+    } else {
+        setNominatedEventIds(new Set())
+    }
+    setShowNominateModal(true)
+  }
+
+  const confirmNomination = async (eventId) => {
+    if (!userId || !movieToNominate) return
+    setNominationError("")
+    const { error } = await supabase.from('nominations').insert([{
+        event_id: eventId,
+        movie_id: movieToNominate.id,
+        nominated_by: userId,
+        nomination_type: 'streaming'
+    }])
+    
+    if (error) {
+        if (error.code === '23505') {
+            setNominationError("This movie is already nominated for this event!")
+        } else {
+            setNominationError("Error nominating: " + error.message)
+        }
+        setTimeout(() => setNominationError(""), 3000)
+    } else {
+        setShowNominateModal(false)
+        setMovieToNominate(null)
+        setNominatedEventIds(new Set())
+    }
+  }
+
+  const openRemoveModal = (movie) => {
+    setMovieToRemove(movie)
+    setShowRemoveModal(true)
+  }
+
+  const confirmRemove = async () => {
+    if (!movieToRemove) return
+    const movieId = movieToRemove.id
+    setWatchlist(prev => prev.filter(m => m.id !== movieId))
+    await supabase.from("user_wishlist").delete().eq("user_id", userId).eq("movie_id", movieId)
+    if (selectedMovie?.id === movieId) setSelectedMovie(null)
+    setShowRemoveModal(false)
+    setMovieToRemove(null)
+  }
+
+  const addToWatchlist = async (movie) => {
+    const { error } = await supabase.from("user_wishlist").insert([{ user_id: userId, movie_id: movie.id }])
+    if (!error || error.code === '23505') {
+        loadWatchlist()
+    }
+  }
+
+  // --- HELPERS ---
 
   const openDateTimePicker = () => {
-    const existing = newEventDate ? new Date(newEventDate) : null
-    const base = existing || new Date()
-    if (!existing) {
-      base.setHours(19, 0, 0, 0)
-    }
-    const roundedMinutes = Math.round(base.getMinutes() / 30) * 30
-    base.setMinutes(roundedMinutes)
-    base.setSeconds(0)
-    base.setMilliseconds(0)
-    setPickedDate(new Date(base.getFullYear(), base.getMonth(), base.getDate()))
-    setPickedTime(`${String(base.getHours()).padStart(2, "0")}:${String(base.getMinutes()).padStart(2, "0")}`)
-    setPickedPeriod(base.getHours() >= 12 ? "PM" : "AM")
-    setDisplayMonth(new Date(base.getFullYear(), base.getMonth(), 1))
+    const now = new Date()
+    setPickedDate(now)
+    setPickedTime("19:00")
+    setPickedPeriod("PM")
+    setDisplayMonth(now)
     setShowDateTimePicker(true)
   }
 
   const confirmDateTime = () => {
     if (!pickedDate || !pickedTime) return
     const [hh, mm] = pickedTime.split(":").map(Number)
-    const composed = new Date(pickedDate.getFullYear(), pickedDate.getMonth(), pickedDate.getDate(), hh, mm, 0, 0)
-    setNewEventDate(composed.toISOString())
+    const d = new Date(pickedDate)
+    d.setHours(hh, mm)
+    setNewEventDate(d.toISOString())
     setShowDateTimePicker(false)
   }
 
-  const createEvent = async () => {
-    const userId = session?.user?.id
-    const title = newEventTitle.trim()
-    if (!userId || !title || creatingEvent) return
-    setCreatingEvent(true)
-
-    const payload = {
-      title,
-      event_date: newEventDate || null,
-      location_address: newEventLocation.trim() || null,
-      group_id: selectedCrewId || null,
-      status: "voting",
-      voting_method: "hearts",
-      created_by: userId,
-    }
-
-    const { error } = await supabase.from("events").insert([payload])
-    setCreatingEvent(false)
-
-    if (error) {
-      alert(`Error creating event: ${error.message}`)
-      return
-    }
-
-    setNewEventTitle("")
-    setNewEventDate("")
-    setNewEventLocation("")
-    setSelectedCrewId("")
-    setShowCreateEvent(false)
-    loadEvents()
+  const formatDateTime = (iso) => {
+    if (!iso) return "TBD"
+    return new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
   }
 
-  const createCrew = async () => {
-    const userId = session?.user?.id
-    const name = newCrewName.trim()
-    if (!userId || !name || creatingCrew) return
-    setCreatingCrew(true)
-
-    let createdGroup = null
-    let insertError = null
-
-    const primaryInsert = await supabase.from("groups").insert([{ name, created_by: userId }]).select().single()
-    if (primaryInsert.error && primaryInsert.error.message?.includes('column "created_by" does not exist')) {
-      const fallbackInsert = await supabase.from("groups").insert([{ name }]).select().single()
-      createdGroup = fallbackInsert.data
-      insertError = fallbackInsert.error
-    } else {
-      createdGroup = primaryInsert.data
-      insertError = primaryInsert.error
+  // --- SWIPE HANDLER ---
+  const handleDragEnd = (e, { offset, velocity }) => {
+    const swipe = offset.x
+    const threshold = 50
+    const velocityThreshold = 500
+    
+    if ((swipe < -threshold || velocity.x < -velocityThreshold) && activeIndex < 2) {
+      setActiveIndex(prev => prev + 1)
+    } else if ((swipe > threshold || velocity.x > velocityThreshold) && activeIndex > 0) {
+      setActiveIndex(prev => prev - 1)
     }
-
-    if (insertError || !createdGroup?.id) {
-      setCreatingCrew(false)
-      alert(`Error creating crew: ${insertError?.message || "Unknown error"}`)
-      return
-    }
-
-    const { error: memberError } = await supabase
-      .from("group_members")
-      .insert([{ group_id: createdGroup.id, user_id: userId }])
-
-    setCreatingCrew(false)
-
-    if (memberError) {
-      alert(`Error joining crew: ${memberError.message}`)
-      return
-    }
-
-    setNewCrewName("")
-    setShowCreateCrew(false)
-    loadCrews()
   }
-
-  const removeFromWatchlist = async (movie) => {
-    const userId = session?.user?.id
-    if (!userId || !movie?.id) return
-    const { error } = await supabase
-      .from("user_wishlist")
-      .delete()
-      .eq("user_id", userId)
-      .eq("movie_id", movie.id)
-
-    if (error) {
-      alert(`Error removing movie: ${error.message}`)
-      return
-    }
-
-    setWatchlist((prev) => prev.filter((item) => item.id !== movie.id))
-  }
-
-  const addToWatchlist = async (movie) => {
-    const userId = session?.user?.id
-    if (!userId || !movie?.id) return
-    const { error } = await supabase
-      .from("user_wishlist")
-      .insert([{ user_id: userId, movie_id: movie.id }])
-
-    if (error) {
-      if (error.code === "23505") {
-        return
-      }
-      alert(`Error adding movie: ${error.message}`)
-      return
-    }
-
-    loadWatchlist()
-  }
-
-  const filteredWatchlist = watchFilter
-    ? watchlist.filter((movie) =>
-        (movie.title || "").toLowerCase().includes(watchFilter.trim().toLowerCase())
-      )
-    : watchlist
 
   return (
-    <div className="p-6 h-full flex flex-col">
-      <div className="flex justify-between items-center mb-8">
+    <div className="fixed inset-0 w-full h-full bg-gradient-to-b from-slate-950 via-slate-900 to-black text-white overflow-hidden flex flex-col">
+      
+      {/* HEADER */}
+      <div className="flex justify-between items-start p-6 pt-8 pb-2 z-10 shrink-0">
         <div>
-          <h1 className="text-3xl font-extrabold m-0">My Hub</h1>
-          <p className="text-sm text-slate-400">@username</p>
+            <h1 className="text-3xl font-black tracking-tight mb-0.5 text-white">Your Hub</h1>
+            <p className="text-slate-400 font-medium">@{username}</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Link to="/profile" className="no-underline">
-            <button
-              type="button"
-              className="w-auto bg-white/10 p-2.5 rounded-full text-white"
-              title="Profile"
-            >
-              <User size={20} />
+
+        <div className="relative">
+            <button onClick={() => setShowProfileMenu(!showProfileMenu)} className="w-10 h-10 rounded-full bg-slate-800 border border-white/10 flex items-center justify-center text-slate-200 hover:bg-slate-700 transition-colors">
+                <User size={20} />
             </button>
-          </Link>
-          <button
-            type="button"
-            onClick={() => supabase.auth.signOut()}
-            className="w-auto bg-white/10 p-2.5 rounded-full text-white"
-            title="Log out"
-          >
-            <LogOut size={20} />
-          </button>
-        </div>
-      </div>
-
-      <div className="flex bg-black/30 p-1 rounded-2xl mb-6">
-        <button
-          type="button"
-          onClick={() => setActiveTab("events")}
-          className={`flex-1 p-3 rounded-lg flex items-center justify-center gap-2 ${
-            activeTab === "events" ? "bg-white/10 text-white" : "text-slate-400"
-          }`}
-        >
-          Events
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("crews")}
-          className={`flex-1 p-3 rounded-lg flex items-center justify-center gap-2 ${
-            activeTab === "crews" ? "bg-white/10 text-white" : "text-slate-400"
-          }`}
-        >
-          Crews
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("watchlist")}
-          className={`flex-1 p-3 rounded-lg flex items-center justify-center gap-2 ${
-            activeTab === "watchlist" ? "bg-white/10 text-white" : "text-slate-400"
-          }`}
-        >
-          Watchlist
-        </button>
-      </div>
-
-      {activeTab === "events" && (
-        <div className="flex-1 min-h-0 overflow-y-auto pr-1">
-          <button
-            type="button"
-            onClick={() => setShowCreateEvent((prev) => !prev)}
-            className="w-full mb-4 bg-primary text-white p-3 rounded-lg font-semibold"
-          >
-            {showCreateEvent ? "Cancel" : "+ New Event"}
-          </button>
-
-          {showCreateEvent && (
-            <div className="bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-2xl p-4 mb-5 flex flex-col gap-2.5">
-              <input
-                placeholder="Event Title (e.g. Friday Horror)"
-                value={newEventTitle}
-                onChange={(e) => setNewEventTitle(e.target.value)}
-                className="w-full bg-black/30 border border-white/10 text-white p-3.5 rounded-lg text-base"
-              />
-              <button
-                type="button"
-                onClick={openDateTimePicker}
-                className="flex items-center justify-center gap-2 bg-white/10 text-white p-3 rounded-lg"
-              >
-                {formatDateTimeLabel(newEventDate)}
-              </button>
-              <input
-                placeholder="Location (Optional)"
-                value={newEventLocation}
-                onChange={(e) => setNewEventLocation(e.target.value)}
-                className="w-full bg-black/30 border border-white/10 text-white p-3.5 rounded-lg text-base"
-              />
-              <select
-                value={selectedCrewId}
-                onChange={(e) => setSelectedCrewId(e.target.value)}
-                className="w-full bg-black/30 border border-white/10 text-white p-3.5 rounded-lg text-base"
-              >
-                <option value="">No crew</option>
-                {crews.map((crew) => (
-                  <option key={crew.id} value={crew.id}>
-                    {crew.name || "Untitled crew"}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={createEvent}
-                disabled={creatingEvent}
-                className="mt-1 bg-accent text-black w-full p-3 rounded-full flex items-center justify-center font-bold disabled:opacity-60"
-              >
-                {creatingEvent ? "Creating..." : "Create Event"}
-              </button>
-            </div>
-          )}
-
-          {eventsLoading ? (
-            <p className="text-sm text-center text-slate-400">Loading events...</p>
-          ) : eventsError ? (
-            <p className="text-sm text-center text-slate-400">{eventsError}</p>
-          ) : events.length === 0 ? (
-            <p className="text-sm text-center text-slate-400">You have no upcoming events yet.</p>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {events.map((event) => (
-                <Link key={event.id} to={`/room/${event.id}`} className="no-underline">
-                  <div className="bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-2xl p-4 flex justify-between items-center hover:bg-slate-800/50 transition-colors">
-                    <div>
-                      <div className="font-bold text-white">
-                        {event.title || "Untitled event"}
-                      </div>
-                      <div className="text-sm text-slate-400">
-                        {event.group_id ? "Crew event" : "Direct event"} •{" "}
-                        {formatEventDate(event.event_date)}
-                      </div>
-                    </div>
-                    <span className="text-slate-400">→</span>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-      {activeTab === "crews" && (
-        <div className="flex-1 min-h-0 overflow-y-auto pr-1">
-          <button
-            type="button"
-            onClick={() => setShowCreateCrew((prev) => !prev)}
-            className="w-full mb-4 bg-primary text-white p-3 rounded-lg font-semibold"
-          >
-            {showCreateCrew ? "Cancel" : "+ Start New Crew"}
-          </button>
-
-          {showCreateCrew && (
-            <div className="bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-2xl p-4 mb-5">
-              <input
-                placeholder="Crew Name (e.g. Action Buffs)"
-                value={newCrewName}
-                onChange={(e) => setNewCrewName(e.target.value)}
-                className="w-full bg-black/30 border border-white/10 text-white p-3.5 rounded-lg text-base"
-              />
-              <button
-                type="button"
-                onClick={createCrew}
-                disabled={creatingCrew}
-                className="mt-2.5 bg-accent text-black w-full p-3 rounded-full flex items-center justify-center font-bold disabled:opacity-60"
-              >
-                {creatingCrew ? "Creating..." : "Create Crew"}
-              </button>
-            </div>
-          )}
-
-          {crewsLoading ? (
-            <p className="text-sm text-center text-slate-400">Loading crews...</p>
-          ) : crewsError ? (
-            <p className="text-sm text-center text-slate-400">{crewsError}</p>
-          ) : crews.length === 0 ? (
-            <p className="text-sm text-center text-slate-400">Not currently in any crews.</p>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {crews.map((crew) => (
-                <Link key={crew.id} to={`/group/${crew.id}`} className="no-underline">
-                  <div className="bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-2xl p-4 flex justify-between items-center hover:bg-slate-800/50 transition-colors">
-                    <div className="font-semibold text-white">{crew.name || "Untitled crew"}</div>
-                    <span className="text-slate-400">→</span>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-      {activeTab === "watchlist" && (
-        <div className="flex-1 min-h-0 overflow-y-auto pr-1">
-          <div className="flex gap-2.5 mb-5">
-            <input
-              placeholder="Search your watchlist..."
-              value={watchFilter}
-              onChange={(e) => setWatchFilter(e.target.value)}
-              className="w-full bg-black/30 border border-white/10 text-white p-3 rounded-lg text-base"
-            />
-            <button
-              type="button"
-              onClick={() => setShowWatchlistSearch(true)}
-              className="w-auto bg-accent text-black px-3 rounded-lg"
-              title="Add to watchlist"
-            >
-              <Plus size={18} />
-            </button>
-          </div>
-
-          {watchlistLoading ? (
-            <p className="text-sm text-center text-slate-400">Loading watchlist...</p>
-          ) : watchlistError ? (
-            <p className="text-sm text-center text-slate-400">{watchlistError}</p>
-          ) : filteredWatchlist.length === 0 ? (
-            <p className="text-sm text-center text-slate-400">No movies found.</p>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {filteredWatchlist.map((movie) => (
-                <MovieCard key={movie.id} movie={movie}>
-                  <div className="flex gap-2.5">
-                    <button
-                      type="button"
-                      onClick={() => removeFromWatchlist(movie)}
-                      className="w-full bg-white/10 text-white p-2.5 rounded-lg"
-                    >
-                      Remove
+            <AnimatePresence>
+            {showProfileMenu && (
+                <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowProfileMenu(false)} />
+                <motion.div 
+                    initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                    className="absolute top-full right-0 mt-2 w-48 bg-slate-900 border border-white/10 rounded-xl shadow-xl z-50 overflow-hidden py-1"
+                >
+                    <button onClick={() => navigate('/profile')} className="w-full text-left px-4 py-3 hover:bg-white/5 flex items-center gap-2 text-sm font-semibold">
+                        <Trophy size={16} className="text-[var(--theme-accent)]" /> See Stats
                     </button>
-                  </div>
-                </MovieCard>
-              ))}
-            </div>
-          )}
+                    <div className="h-px bg-white/5 my-1" />
+                    <button onClick={() => supabase.auth.signOut()} className="w-full text-left px-4 py-3 hover:bg-white/5 flex items-center gap-2 text-sm font-semibold text-white">
+                        <LogOut size={16} className="text-[var(--theme-primary)]" /> Sign Out
+                    </button>
+                </motion.div>
+                </>
+            )}
+            </AnimatePresence>
         </div>
-      )}
+      </div>
+
+      {/* MAIN CONTENT (CAROUSEL) */}
+      <div className="flex-1 relative overflow-hidden overscroll-x-none" ref={containerRef} style={{ perspective: 1000 }}>
+        <motion.div
+            className="flex h-full"
+            style={{ width: '300%', touchAction: 'pan-y', willChange: 'transform' }}
+            drag="x"
+            dragConstraints={dragConstraints}
+            dragMomentum={false}
+            onDragEnd={handleDragEnd}
+            initial={false}
+            animate={{ x: `-${activeIndex * 33.333}%` }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+        >
+            {/* --- IDEAS TAB (Index 0) --- */}
+            <div ref={ideasRef} className="w-[100vw] h-full overflow-y-auto px-4 pb-24 scrollbar-hide">
+                <div className="flex flex-col items-center justify-center h-[60vh] text-center p-6">
+                    <div className="w-20 h-20 bg-[var(--theme-accent)]/10 rounded-full flex items-center justify-center mb-4">
+                        <Lightbulb size={40} className="text-[var(--theme-accent)]" />
+                    </div>
+                    <h2 className="text-2xl font-bold mb-2">Ideas Board</h2>
+                    <p className="text-slate-400">This feature is a work in progress. Soon you'll be able to save themes and movie night ideas here!</p>
+                </div>
+            </div>
+
+            {/* --- HUB TAB (Index 1) --- */}
+            <div ref={hubRef} className="w-[100vw] h-full overflow-y-auto px-4 pb-24 scrollbar-hide">
+                <div className="space-y-6 pb-20 pt-2">
+                    {eventsLoading ? (
+                        <LoadingSpinner />
+                    ) : (
+                        <>
+                            {/* NEXT UP */}
+                            <section>
+                                <div className="flex items-center gap-2 mb-3">
+                                    <div className="w-2 h-2 rounded-full bg-[var(--theme-primary)] animate-pulse shadow-[0_0_10px_rgba(225,29,72,0.5)]" />
+                                    <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Next Up</h2>
+                                </div>
+                                {nextUp ? (
+                                    <Link to={`/room/${nextUp.id}`}>
+                                        <div className="relative w-full aspect-[2/1] bg-slate-800 rounded-2xl overflow-hidden border border-white/10 shadow-2xl group">
+                                            <div className="absolute inset-0 bg-gradient-to-br from-[var(--theme-primary)] via-black/50 to-black/80 group-hover:scale-105 transition-transform duration-700" />
+                                            <div className="absolute inset-0 p-5 flex flex-col justify-end">
+                                                <div className="flex items-end justify-between gap-4">
+                                                    <div>
+                                                        <h3 className="text-2xl font-black leading-none mb-2">{nextUp.title}</h3>
+                                                        <div className="flex items-center gap-2 text-xs font-bold text-slate-300 bg-black/30 px-2 py-1 rounded-lg w-fit backdrop-blur-sm">
+                                                            <Calendar size={12} /> {formatDateTime(nextUp.event_date)}
+                                                        </div>
+                                                    </div>
+                                                    <div className="bg-[var(--theme-primary)] text-white text-xs font-bold px-4 py-2 rounded-full shrink-0 hover:bg-rose-700 transition-colors">
+                                                        See Details
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </Link>
+                                ) : (
+                                    <div className="p-6 rounded-2xl border border-dashed border-white/10 text-center">
+                                        <p className="text-slate-500 text-sm">No upcoming events.</p>
+                                        <button onClick={() => setShowCreateEvent(true)} className="mt-2 text-[var(--theme-primary)] text-sm font-bold hover:underline">Plan one now</button>
+                                    </div>
+                                )}
+                            </section>
+
+                            {/* UPCOMING */}
+                            {upcoming.length > 0 && (
+                                <section>
+                                    <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Upcoming</h2>
+                                    <div className="space-y-3">
+                                        {upcoming.map(event => (
+                                            <Link key={event.id} to={`/room/${event.id}`}>
+                                                <div className="flex items-center gap-4 p-4 bg-slate-900/50 border border-white/5 rounded-xl hover:bg-slate-800 transition-colors">
+                                                    <div className="w-12 h-12 rounded-lg bg-slate-800 flex flex-col items-center justify-center border border-[var(--theme-primary)] shrink-0">
+                                                        <span className="text-[10px] text-slate-500 uppercase font-bold">{new Date(event.event_date).toLocaleString('default', { month: 'short' })}</span>
+                                                        <span className="text-lg font-black leading-none">{new Date(event.event_date).getDate()}</span>
+                                                    </div>
+                                                    <div className="min-w-0 flex-1">
+                                                        <h4 className="font-bold truncate">{event.title}</h4>
+                                                        <p className="text-xs text-slate-400 truncate">{event.location_address || 'No location set'}</p>
+                                                    </div>
+                                                </div>
+                                            </Link>
+                                        ))}
+                                    </div>
+                                </section>
+                            )}
+
+                            {/* PAST */}
+                            {pastEvents.length > 0 && (
+                                <section>
+                                    <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Past Events</h2>
+                                    <div className="space-y-3 opacity-60 hover:opacity-100 transition-opacity">
+                                        {pastEvents.map(event => (
+                                            <Link key={event.id} to={`/room/${event.id}`}>
+                                                <div className="flex items-center justify-between p-3 bg-slate-900/30 border border-white/5 rounded-lg">
+                                                    <span className="font-medium text-sm text-slate-300">{event.title}</span>
+                                                    <span className="text-xs text-slate-500">{new Date(event.event_date).toLocaleDateString()}</span>
+                                                </div>
+                                            </Link>
+                                        ))}
+                                    </div>
+                                </section>
+                            )}
+                        </>
+                    )}
+                </div>
+            </div>
+
+            {/* --- WATCHLIST TAB (Index 2) --- */}
+            <div ref={watchlistRef} className="w-[100vw] h-full overflow-y-auto px-4 pb-24 scrollbar-hide">
+                <div className="space-y-4 pt-2">
+                    <div className="flex gap-2">
+                        <form onSubmit={(e) => { e.preventDefault(); document.activeElement.blur() }} className="relative flex-1">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                            <input 
+                                type="text" 
+                                enterKeyHint="search"
+                                placeholder="Search watchlist..." 
+                                value={watchSearchTerm}
+                                onChange={(e) => setWatchSearchTerm(e.target.value)}
+                                className="w-full bg-slate-900 border border-white/10 rounded-xl py-2.5 pl-10 pr-10 text-base focus:outline-none focus:border-[var(--theme-secondary)] transition-colors"
+                            />
+                            {watchSearchTerm && (
+                                <button
+                                    type="button"
+                                    onClick={() => setWatchSearchTerm('')}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                                >
+                                    <X size={18} />
+                                </button>
+                            )}
+                        </form>
+                        <button 
+                            onClick={() => setShowFilters(!showFilters)}
+                            className={`p-2.5 rounded-xl border transition-colors ${showFilters ? 'bg-[var(--theme-secondary)]/20 border-[var(--theme-secondary)] text-[var(--theme-secondary)]' : 'bg-slate-900 border-white/10 text-slate-400'}`}
+                        >
+                            <Filter size={20} />
+                        </button>
+                        <button 
+                            onClick={() => setShowWatchlistSearch(true)}
+                            className="p-2.5 rounded-xl bg-[var(--theme-secondary)] text-white font-bold"
+                        >
+                            <Plus size={20} />
+                        </button>
+                    </div>
+
+                    {showFilters && (
+                        <div className="p-4 bg-slate-900 border border-white/10 rounded-xl space-y-4">
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Genre</label>
+                                <div className="flex flex-wrap gap-2">
+                                    <button 
+                                        onClick={() => setFilterGenre("")}
+                                        className={`px-3 py-1 rounded-full text-xs font-bold border ${!filterGenre ? 'bg-white text-black border-white' : 'border-white/10 text-slate-400'}`}
+                                    >
+                                        All
+                                    </button>
+                                    {DEFAULT_GENRES.map(g => (
+                                        <button 
+                                            key={g}
+                                            onClick={() => setFilterGenre(g === filterGenre ? "" : g)}
+                                            className={`px-3 py-1 rounded-full text-xs font-bold border ${g === filterGenre ? 'bg-[var(--theme-secondary)] text-white border-[var(--theme-secondary)]' : 'border-white/10 text-slate-400'}`}
+                                        >
+                                            {g}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Min Score: {filterScore}%</label>
+                                <input 
+                                    type="range" 
+                                    min="0" max="100" 
+                                    value={filterScore} 
+                                    onChange={(e) => setFilterScore(Number(e.target.value))}
+                                    className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer"
+                                    onPointerDownCapture={(e) => e.stopPropagation()}
+                                    style={{ background: `linear-gradient(to right, #6366f1 ${filterScore}%, #1e293b ${filterScore}%)` }}
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="space-y-3">
+                        {watchlistLoading ? (
+                            <LoadingSpinner />
+                        ) : filteredWatchlist.length === 0 ? (
+                            <div className="text-center py-10 text-slate-500">
+                                <Film size={48} className="mx-auto mb-2 opacity-20" />
+                                <p>No movies found.</p>
+                                <button onClick={() => setShowWatchlistSearch(true)} className="mt-2 text-[var(--theme-secondary)] text-sm font-bold hover:underline">Add a movie</button>
+                            </div>
+                        ) : (
+                            filteredWatchlist.map(movie => (
+                                <div 
+                                    key={movie.id} 
+                                    onClick={() => setSelectedMovie(movie)}
+                                    className="flex gap-3 p-3 bg-slate-900/40 border border-white/5 rounded-xl group cursor-pointer hover:bg-slate-800 transition-colors"
+                                >
+                                    <div className="w-20 shrink-0 aspect-[2/3] bg-slate-800 rounded-lg overflow-hidden shadow-lg">
+                                        {movie.poster_path ? (
+                                            <img src={`${POSTER_BASE_URL}${movie.poster_path}`} className="w-full h-full object-cover" alt={movie.title} />
+                                        ) : (
+                                            <div className="w-full h-full flex items-center justify-center text-slate-600"><Film size={20} /></div>
+                                        )}
+                                    </div>
+                                    <div className="flex-1 min-w-0 flex flex-col">
+                                        <div className="flex justify-between items-start">
+                                            <h3 className="font-bold text-sm leading-tight">{movie.title}</h3>
+                                            {movie.rt_score && (
+                                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${movie.rt_score >= 60 ? 'bg-green-500/20 text-green-400' : 'bg-slate-800 text-slate-400'}`}>
+                                                    {movie.rt_score}%
+                                                </span>
+                                            )}
+                                        </div>
+                                        <p className="text-xs text-slate-500 mt-1">{movie.year} • {movie.genre?.[0]}</p>
+                                        {movie.description && (
+                                            <p className="text-xs text-slate-400 mt-2 line-clamp-2 leading-relaxed">{movie.description}</p>
+                                        )}
+                                        <div className="mt-auto flex gap-2">
+                                            <button 
+                                                onPointerDownCapture={(e) => e.stopPropagation()}
+                                                onClick={(e) => { e.stopPropagation(); openNominateModal(movie) }}
+                                                className="flex-1 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded-lg text-xs font-bold transition-colors"
+                                            >
+                                                Nominate
+                                            </button>
+                                            <button 
+                                                onPointerDownCapture={(e) => e.stopPropagation()}
+                                                onClick={(e) => { e.stopPropagation(); openRemoveModal(movie) }}
+                                                className="flex-1 py-2 bg-white/5 hover:bg-red-500/20 hover:text-red-400 rounded-lg text-xs font-bold transition-colors"
+                                            >
+                                                Remove
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            </div>
+        </motion.div>
+      </div>
+
+      {/* FLOATING ACTION BUTTON (Only on Hub) */}
+      <AnimatePresence>
+        {activeIndex === 1 && (
+            <motion.div 
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0, opacity: 0 }}
+                className="fixed bottom-20 right-6 z-20"
+            >
+                <div className="relative">
+                    <button 
+                        onClick={() => setShowPlusMenu(!showPlusMenu)} 
+                        className="w-14 h-14 rounded-full bg-[var(--theme-primary)] text-white flex items-center justify-center shadow-[0_0_20px_rgba(225,29,72,0.5)] hover:bg-rose-500 transition-colors"
+                    >
+                        <Plus size={28} strokeWidth={2.5} />
+                    </button>
+                    {/* Plus Menu Dropdown (positioned bottom-up) */}
+                    <AnimatePresence>
+                    {showPlusMenu && (
+                        <>
+                        <div className="fixed inset-0 z-30" onClick={() => setShowPlusMenu(false)} />
+                        <motion.div 
+                            initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                            className="absolute bottom-full right-0 mb-3 w-56 bg-slate-900 border border-white/10 rounded-xl shadow-xl z-40 overflow-hidden py-1 origin-bottom-right"
+                        >
+                            <button onClick={() => { setShowCreateEvent(true); setShowPlusMenu(false) }} className="w-full text-left px-4 py-3 hover:bg-white/5 flex items-center gap-3 text-sm font-bold">
+                                <Calendar size={18} className="text-[var(--theme-secondary)]" /> Create Event
+                            </button>
+                            <button onClick={() => { setShowCrewManager(true); setShowPlusMenu(false) }} className="w-full text-left px-4 py-3 hover:bg-white/5 flex items-center gap-3 text-sm font-bold">
+                                <Plus size={18} className="text-green-400" /> Create Crew
+                            </button>
+                            <button onClick={() => { setShowCrewManager(true); setShowPlusMenu(false) }} className="w-full text-left px-4 py-3 hover:bg-white/5 flex items-center gap-3 text-sm font-bold">
+                                <Users size={18} className="text-purple-400" /> Manage Crews
+                            </button>
+                        </motion.div>
+                        </>
+                    )}
+                    </AnimatePresence>
+                </div>
+            </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* BOTTOM NAVIGATION */}
+      <div className="fixed bottom-0 left-0 right-0 bg-slate-950/90 backdrop-blur-lg border-t border-white/10 z-30 pb-safe">
+        <div className="grid grid-cols-3 py-3">
+            <button 
+                onClick={() => setActiveIndex(0)}
+                className={`flex flex-col items-center justify-center gap-1 transition-colors ${activeIndex === 0 ? 'text-[var(--theme-accent)]' : 'text-slate-500 hover:text-slate-300'}`}
+            >
+                <Lightbulb size={24} strokeWidth={activeIndex === 0 ? 2.5 : 2} />
+                <span className="text-[10px] font-bold">Ideas</span>
+            </button>
+            <button 
+                onClick={() => setActiveIndex(1)}
+                className={`flex flex-col items-center justify-center gap-1 transition-colors ${activeIndex === 1 ? 'text-[var(--theme-primary)]' : 'text-slate-500 hover:text-slate-300'}`}
+            >
+                <Home size={24} strokeWidth={activeIndex === 1 ? 2.5 : 2} />
+                <span className="text-[10px] font-bold">Hub</span>
+            </button>
+            <button 
+                onClick={() => setActiveIndex(2)}
+                className={`flex flex-col items-center justify-center gap-1 transition-colors ${activeIndex === 2 ? 'text-[var(--theme-secondary)]' : 'text-slate-500 hover:text-slate-300'}`}
+            >
+                <Film size={24} strokeWidth={activeIndex === 2 ? 2.5 : 2} />
+                <span className="text-[10px] font-bold">Watchlist</span>
+            </button>
+        </div>
+      </div>
+
+      {/* --- MODALS --- */}
+
+      {/* CREATE EVENT MODAL */}
+      <AnimatePresence>
+        {showCreateEvent && (
+            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={() => setShowCreateEvent(false)}>
+                <motion.div 
+                    initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-full max-w-md bg-slate-900 border border-white/10 rounded-3xl p-6 shadow-2xl"
+                >
+                    <div className="flex justify-between items-center mb-6">
+                        <h2 className="text-xl font-bold">New Event</h2>
+                        <button onClick={() => setShowCreateEvent(false)} className="p-2 bg-white/5 rounded-full"><X size={20}/></button>
+                    </div>
+                    <div className="space-y-4">
+                        <input 
+                            placeholder="Event Title" 
+                            value={newEventTitle}
+                            onChange={(e) => setNewEventTitle(e.target.value)}
+                            className="w-full bg-black/30 border border-white/10 p-4 rounded-xl text-lg font-bold focus:border-[var(--theme-secondary)] outline-none"
+                        />
+                        <motion.button 
+                            onClick={openDateTimePicker} 
+                            animate={shakeDate ? { x: [0, -10, 10, -10, 10, 0] } : {}}
+                            transition={{ duration: 0.4 }}
+                            className="w-full flex items-center gap-3 bg-white/5 p-4 rounded-xl text-left hover:bg-white/10"
+                        >
+                            <Calendar className="text-indigo-500" />
+                            {newEventDate ? formatDateTime(newEventDate) : "Set Date & Time"}
+                        </motion.button>
+                        <div className="flex items-center gap-2 bg-black/30 border border-white/10 p-4 rounded-xl">
+                            <MapPin className="text-[var(--theme-primary)] shrink-0" />
+                            <input 
+                                placeholder="Location (Optional)" 
+                                value={newEventLocation}
+                                onChange={(e) => setNewEventLocation(e.target.value)}
+                                className="bg-transparent w-full outline-none"
+                            />
+                        </div>
+                        <div className="relative">
+                            <select 
+                                value={selectedCrewId}
+                                onChange={(e) => setSelectedCrewId(e.target.value)}
+                                className="w-full bg-black/30 border border-white/10 p-4 rounded-xl outline-none appearance-none pr-10"
+                            >
+                                <option value="">No Crew (Direct Invite)</option>
+                                {crews.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                            <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" size={20} />
+                        </div>
+                        <button 
+                            onClick={handleCreateEvent}
+                            disabled={creatingEvent || !newEventTitle}
+                            className="w-full bg-rose-500 text-white font-black py-4 rounded-xl mt-4 disabled:opacity-50 hover:bg-rose-600 transition-colors"
+                        >
+                            {creatingEvent ? "Creating..." : "Create Event"}
+                        </button>
+                    </div>
+                </motion.div>
+            </div>
+        )}
+      </AnimatePresence>
+
+      {/* CREW MANAGER MODAL */}
+      <AnimatePresence>
+        {showCrewManager && (
+            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+                <motion.div 
+                    initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+                    className="w-full max-w-md bg-slate-900 border border-white/10 rounded-3xl p-6 shadow-2xl max-h-[80vh] flex flex-col"
+                >
+                    <div className="flex justify-between items-center mb-6 shrink-0">
+                        <h2 className="text-xl font-bold">My Crews</h2>
+                        <button onClick={() => setShowCrewManager(false)} className="p-2 bg-white/5 rounded-full"><X size={20}/></button>
+                    </div>
+                    
+                    <div className="flex-1 overflow-y-auto space-y-3 mb-4">
+                        {crews.length === 0 ? (
+                            <p className="text-center text-slate-500 py-10">You aren't in any crews yet.</p>
+                        ) : (
+                            crews.map(crew => (
+                                <Link key={crew.id} to={`/group/${crew.id}`} onClick={() => setShowCrewManager(false)}>
+                                    <div className="p-4 bg-white/5 rounded-xl flex justify-between items-center hover:bg-white/10 border border-transparent hover:border-white/10 transition-all">
+                                        <span className="font-bold">{crew.name}</span>
+                                        <ChevronRight size={16} className="text-slate-500" />
+                                    </div>
+                                </Link>
+                            ))
+                        )}
+                    </div>
+
+                    <div className="shrink-0 pt-4 border-t border-white/10">
+                        <h3 className="text-xs font-bold text-slate-500 uppercase mb-3">Create New Crew</h3>
+                        <div className="flex gap-2">
+                            <input 
+                                placeholder="Crew Name" 
+                                value={newCrewName}
+                                onChange={(e) => setNewCrewName(e.target.value)}
+                                className="flex-1 bg-black/30 border border-white/10 px-4 rounded-xl outline-none focus:border-[var(--theme-secondary)]"
+                            />
+                            <button 
+                                onClick={handleCreateCrew}
+                                disabled={creatingCrew || !newCrewName}
+                                className="bg-indigo-500 text-white px-4 py-3 rounded-xl font-bold disabled:opacity-50 hover:bg-indigo-600 transition-colors"
+                            >
+                                {creatingCrew ? "..." : "Create"}
+                            </button>
+                        </div>
+                    </div>
+                </motion.div>
+            </div>
+        )}
+      </AnimatePresence>
+
+      {/* SEARCH MOVIES OVERLAY */}
       <AnimatePresence>
         {showWatchlistSearch && (
           <SearchMovies
@@ -615,10 +823,23 @@ const Dashboard = ({ session }) => {
             groupId={null}
             onClose={() => setShowWatchlistSearch(false)}
             customAction={addToWatchlist}
-            customRemoveAction={removeFromWatchlist}
+            customRemoveAction={(m) => removeFromWatchlist(m.id)}
           />
         )}
       </AnimatePresence>
+
+      {/* EXPANDED MOVIE CARD */}
+      <AnimatePresence>
+        {selectedMovie && (
+            <ExpandedCard 
+                movie={selectedMovie}
+                onClose={() => setSelectedMovie(null)}
+                onRemove={() => openRemoveModal(selectedMovie)}
+                onNominate={() => openNominateModal(selectedMovie)}
+            />
+        )}
+      </AnimatePresence>
+
       <DateTimePickerSheet
         show={showDateTimePicker}
         onClose={() => setShowDateTimePicker(false)}
@@ -632,8 +853,151 @@ const Dashboard = ({ session }) => {
         setPickedPeriod={setPickedPeriod}
         onConfirm={confirmDateTime}
       />
+
+      {/* NOMINATE MODAL */}
+      <AnimatePresence>
+        {showNominateModal && (
+            <div className="fixed inset-0 z-[110] flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={() => setShowNominateModal(false)}>
+                <motion.div 
+                    initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+                    className="w-full max-w-md bg-slate-900 border border-white/10 rounded-3xl p-6 shadow-2xl"
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-xl font-bold">Nominate to...</h2>
+                        <button onClick={() => setShowNominateModal(false)} className="p-2 bg-white/5 rounded-full"><X size={20}/></button>
+                    </div>
+                    {nominationError && (
+                        <div className="mb-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-200 text-sm text-center">
+                            {nominationError}
+                        </div>
+                    )}
+                    <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+                        {futureEvents.length === 0 ? (
+                            <p className="text-slate-500 text-center py-4">No upcoming events found.</p>
+                        ) : (
+                            <>
+                                {futureEvents.filter(e => !nominatedEventIds.has(e.id)).map(evt => (
+                                    <button
+                                        key={evt.id}
+                                        onClick={() => confirmNomination(evt.id)}
+                                        className="w-full p-4 bg-white/5 hover:bg-white/10 rounded-xl flex items-center justify-between transition-colors text-left"
+                                    >
+                                        <div>
+                                            <div className="font-bold">{evt.title}</div>
+                                            <div className="text-xs text-slate-400">{formatDateTime(evt.event_date)}</div>
+                                        </div>
+                                        <ChevronRight size={16} className="text-slate-500" />
+                                    </button>
+                                ))}
+                                {futureEvents.filter(e => nominatedEventIds.has(e.id)).length > 0 && (
+                                    <>
+                                        <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mt-4 mb-2 px-2">Already Nominated</div>
+                                        {futureEvents.filter(e => nominatedEventIds.has(e.id)).map(evt => (
+                                            <div
+                                                key={evt.id}
+                                                className="w-full p-4 bg-white/5 rounded-xl flex items-center justify-between opacity-50 cursor-not-allowed"
+                                            >
+                                                <div>
+                                                    <div className="font-bold text-slate-400">{evt.title}</div>
+                                                    <div className="text-xs text-slate-500">{formatDateTime(evt.event_date)}</div>
+                                                </div>
+                                                <Check size={16} className="text-green-500" />
+                                            </div>
+                                        ))}
+                                    </>
+                                )}
+                            </>
+                        )}
+                    </div>
+                </motion.div>
+            </div>
+        )}
+      </AnimatePresence>
+
+      {/* REMOVE CONFIRM MODAL */}
+      <AnimatePresence>
+        {showRemoveModal && (
+            <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+                <motion.div 
+                    initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+                    className="w-full max-w-sm bg-slate-900 border border-white/10 rounded-3xl p-6 shadow-2xl text-center"
+                >
+                    <h2 className="text-xl font-bold mb-2">Remove from Watchlist?</h2>
+                    <p className="text-slate-400 mb-6">Are you sure you want to remove "{movieToRemove?.title}"?</p>
+                    <div className="flex gap-3">
+                        <button onClick={() => setShowRemoveModal(false)} className="flex-1 py-3 bg-white/5 hover:bg-white/10 rounded-xl font-bold transition-colors">Cancel</button>
+                        <button onClick={confirmRemove} className="flex-1 py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl font-bold transition-colors">Remove</button>
+                    </div>
+                </motion.div>
+            </div>
+        )}
+      </AnimatePresence>
     </div>
   )
+}
+
+function ExpandedCard({ movie, onClose, onRemove, onNominate }) {
+    const posterUrl = movie.poster_path ? `${POSTER_BASE_URL}${movie.poster_path}` : null
+    
+    return (
+        <div 
+            className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md"
+            onClick={onClose}
+        >
+            <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                transition={{ duration: 0.2 }}
+                className="w-full max-w-lg max-h-[85vh] bg-slate-900 rounded-3xl overflow-hidden shadow-2xl border border-white/10 flex flex-col relative"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="flex-1 overflow-y-auto p-6 pb-24">
+                    <div className="flex gap-4 mb-4">
+                        <div className="w-28 shrink-0 aspect-[2/3] rounded-xl overflow-hidden bg-slate-800 shadow-lg">
+                            {posterUrl ? (
+                                <img src={posterUrl} alt={movie.title} className="w-full h-full object-cover" />
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center text-slate-600"><Film size={24} /></div>
+                            )}
+                        </div>
+                        <div>
+                            <h2 className="text-2xl font-bold leading-tight mb-1">{movie.title}</h2>
+                            <div className="text-sm text-slate-400 mb-2">{movie.year || 'N/A'}</div>
+                            {movie.rt_score && (
+                                <div className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white/10 text-xs font-bold text-yellow-400">
+                                    <Star size={12} fill="currentColor" /> {movie.rt_score}%
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2 mb-6">
+                        {movie.genre?.map(g => (
+                            <span key={g} className="text-xs bg-white/10 px-2 py-1 rounded-full">{g}</span>
+                        ))}
+                    </div>
+                    <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap">
+                        {movie.description || "No description available."}
+                    </p>
+                </div>
+
+                {/* Action Bar */}
+                <div className="absolute bottom-0 left-0 right-0 p-6 pt-12 bg-gradient-to-t from-slate-900 via-slate-900 to-transparent flex justify-center gap-3 z-10">
+                    <button onClick={onNominate} className="flex-1 h-12 rounded-xl border-2 flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-95 font-bold bg-indigo-500/20 border-indigo-500/50 text-indigo-400 hover:bg-indigo-500/30 hover:border-indigo-500">
+                        <Plus size={18} /> Nominate
+                    </button>
+                    <button onClick={onRemove} className="flex-1 h-12 rounded-xl border-2 flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-95 font-bold bg-white/5 border-white/10 text-[var(--theme-primary)] hover:bg-rose-500/10 hover:border-[var(--theme-primary)]">
+                        <Trash2 size={18} /> Remove
+                    </button>
+                </div>
+            </motion.div>
+            
+            <button className="absolute top-4 right-4 p-2 rounded-full bg-black/40 text-white/70 hover:text-white backdrop-blur-sm border border-white/10 z-20" onClick={onClose}>
+                <X size={20} />
+            </button>
+        </div>
+    )
 }
 
 export default Dashboard

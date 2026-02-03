@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion' 
-import { X, Search, Filter, Book, Ticket, Users, ChevronDown, ChevronUp, Minus, Plus, Check } from 'lucide-react' 
+import { X, Search, Filter, Book, Ticket, Users, ChevronDown, ChevronUp, Minus, Plus, Check, SquarePen, Film, Star } from 'lucide-react' 
 import { supabase } from './supabaseClient'
 import { POSTER_BASE_URL } from './tmdbClient'
 
@@ -19,7 +19,9 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
   const theaterSearchRequestId = useRef(0)
   const searchInputRef = useRef(null)
   const theaterSearchInputRef = useRef(null)
+  const listRef = useRef(null)
   const [currentUserId, setCurrentUserId] = useState(null)
+  const [selectedMovie, setSelectedMovie] = useState(null)
   
   // Lists
   const [myWatchlist, setMyWatchlist] = useState([])
@@ -31,9 +33,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
   // Filters
   const [showFilters, setShowFilters] = useState(false)
   const [minScore, setMinScore] = useState(70)
-  const [useScoreFilter, setUseScoreFilter] = useState(false)
   const [genreFilters, setGenreFilters] = useState([])
-  const [showAllGenres, setShowAllGenres] = useState(false)
   const [showNominationGuide, setShowNominationGuide] = useState(true)
 
   // Write In
@@ -81,7 +81,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
     }
     if (activeTab === 'watchlist' && watchlistScope === 'mine') fetchMyWatchlist()
     if (activeTab === 'watchlist' && watchlistScope === 'crew') fetchCrewWatchlists()
-  }, [searchTerm, activeTab, watchlistScope, genreFilters, minScore, useScoreFilter, isWritingIn, eventId, groupId])
+  }, [searchTerm, activeTab, watchlistScope, genreFilters, minScore, isWritingIn, eventId, groupId])
 
   useEffect(() => {
     if (isWatchlistMode) fetchMyWatchlist()
@@ -94,21 +94,6 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
       if (isMounted) setCurrentUserId(user?.id || null)
     }
     loadUser()
-    return () => { isMounted = false }
-  }, [])
-
-  useEffect(() => {
-    let isMounted = true
-    async function loadGenres() {
-      const { data, error } = await supabase.rpc('get_unique_genres')
-      if (error || !Array.isArray(data) || data.length === 0) return
-      const cleaned = data.filter(Boolean)
-      if (!isMounted || cleaned.length === 0) return
-      setGenres(cleaned)
-      setNewGenreOption(prev => (cleaned.includes(prev) ? prev : cleaned[0]))
-      setTheaterWriteInGenreOption(prev => (cleaned.includes(prev) ? prev : cleaned[0]))
-    }
-    loadGenres()
     return () => { isMounted = false }
   }, [])
 
@@ -136,7 +121,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
     } else {
       let query = supabase.from('movies').select()
       if (genreFilters.length > 0) query = query.overlaps('genre', genreFilters)
-      if (useScoreFilter) query = query.or(`rt_score.gte.${minScore},rt_score.is.null`)
+      if (minScore > 0) query = query.or(`rt_score.gte.${minScore},rt_score.is.null`)
       query = query.limit(20)
       const { data: listData } = await query
       data = listData
@@ -231,17 +216,13 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
     setCrewWatchlistEntries(Array.from(movieMap.values()))
   }
 
-  const sortedGenres = [...genres].sort((a, b) => a.localeCompare(b))
-  const commonGenres = COMMON_GENRES.filter(g => genres.includes(g))
-  const visibleGenres = showAllGenres ? sortedGenres : commonGenres
-
   // Helper: Apply Genre & Score Filters locally
   function applyFilters(list, options = {}) {
     const { skipSearchMatch = false } = options
     const normalizedTerm = normalizeText(searchTerm)
     return list.filter(m => {
         const score = m.rt_score === null ? 100 : m.rt_score // Treat null as 100
-        const scorePass = !useScoreFilter || score >= minScore
+        const scorePass = score >= minScore
         const movieGenres = Array.isArray(m.genre) ? m.genre : (m.genre ? [m.genre] : [])
         const genrePass = genreFilters.length === 0 || genreFilters.some(g => movieGenres.includes(g))
         const normalizedTitle = normalizeText(m.title)
@@ -401,10 +382,10 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
   const filteredMyWatchlist = applyFilters(myWatchlist)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 backdrop-blur-sm">
-      <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: "spring", damping: 25, stiffness: 300 }} className="w-full max-w-lg h-[85svh] bg-slate-900 border-t border-white/10 rounded-t-3xl p-5 pt-[max(20px,env(safe-area-inset-top))] flex flex-col shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={onClose}>
+      <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: "spring", damping: 25, stiffness: 300 }} onClick={(e) => e.stopPropagation()} className="w-full max-w-md h-[85dvh] bg-gradient-to-b from-slate-950 via-slate-900 to-black border border-white/10 rounded-3xl p-6 flex flex-col shadow-2xl overflow-hidden">
         
-        <div className="flex justify-between items-center mb-5">
+        <div className="flex justify-between items-center mb-5 shrink-0">
           <h2 className="m-0 text-xl font-bold">{isEventMode ? 'Nominate' : 'Add to Watchlist'}</h2>
           <button
             onClick={onClose}
@@ -416,7 +397,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
 
         {/* TABS */}
         {isEventMode && (
-          <div className="flex gap-2.5 mb-4 overflow-x-auto pb-1.5 justify-center">
+          <div className="flex gap-2.5 mb-4 overflow-x-auto pb-1.5 justify-center shrink-0">
               <TabButton active={activeTab === 'search'} onClick={() => {setActiveTab('search'); setIsWritingIn(false)}}><Search size={16}/> Search</TabButton>
               <TabButton active={activeTab === 'watchlist'} onClick={() => { setActiveTab('watchlist'); setIsWritingIn(false) }}><Book size={16}/> Watchlist</TabButton>
               <TabButton active={activeTab === 'theater'} onClick={() => { setActiveTab('theater'); setIsWritingIn(false) }}><Ticket size={16}/> Theatre</TabButton>
@@ -424,7 +405,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
         )}
 
         {isEventMode && showNominationGuide && (
-          <div className="relative mb-3.5 pt-2 pr-3">
+          <div className="relative mb-3.5 pt-2 pr-3 shrink-0">
             <div
               className="p-3.5 rounded-2xl border-dashed border border-accent/40 bg-accent/10 text-center"
             >
@@ -452,108 +433,58 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
 
         {/* FILTERS (Shared across lists) */}
         {activeTab !== 'theater' && !isWritingIn && (
-            <div className="mb-4 p-2.5 bg-white/5 rounded-lg">
-                <form className="flex justify-between items-center" onSubmit={handleSearchSubmit}>
-                    <div className="flex gap-2.5 items-center flex-1">
-                        <Search size={16} className="text-slate-400"/>
-                        <input
-                          ref={searchInputRef}
-                          type="text"
-                          enterKeyHint="search"
-                          placeholder="Search for movie..."
-                          value={searchTerm}
-                          onChange={(e) => setSearchTerm(e.target.value)}
-                          className="bg-transparent border-none p-0 h-auto w-full text-white"
+            <div className="mb-4 shrink-0">
+                <div className="flex gap-2">
+                    <form onSubmit={handleSearchSubmit} className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                        <input 
+                            ref={searchInputRef}
+                            type="text" 
+                            enterKeyHint="search"
+                            placeholder="Search movies..." 
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-full bg-slate-900 border border-white/10 rounded-xl py-2.5 pl-10 pr-10 text-base focus:outline-none focus:border-indigo-500 transition-colors"
                         />
                         {searchTerm && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSearchTerm('')
-                              searchInputRef.current?.focus()
-                            }}
-                            className="bg-white/10 border-none text-slate-300 p-1 rounded-full inline-flex items-center justify-center"
-                            aria-label="Clear search"
-                          >
-                            <X size={14} />
-                          </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setSearchTerm('')
+                                    searchInputRef.current?.focus()
+                                }}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                            >
+                                <X size={18} />
+                            </button>
                         )}
-                    </div>
-                    <button type="button" onClick={() => setShowFilters(!showFilters)} className="bg-none p-1 ml-1.5 inline-flex items-center">
-                      <Filter size={16} className={showFilters ? 'text-accent' : 'text-slate-500'} />
+                    </form>
+                    <button 
+                        onClick={() => {
+                            setShowFilters(!showFilters)
+                            if (listRef.current) listRef.current.scrollTop = 0
+                        }}
+                        className={`p-2.5 rounded-xl border transition-colors ${showFilters ? 'bg-indigo-500/20 border-indigo-500 text-indigo-500' : 'bg-slate-900 border-white/10 text-slate-400'}`}
+                    >
+                        <Filter size={20} />
                     </button>
-                </form>
-                {showFilters && (
-                    <div className="mt-2.5 pt-2.5 border-t border-white/10">
-                         <div className="mb-2.5">
-                            <div className="flex gap-1.5 flex-wrap">
-                              {visibleGenres.map(g => (
-                                <button
-                                  key={g}
-                                  onClick={() => toggleGenreFilter(g)}
-                                  className={`px-2.5 py-1.5 rounded-full border text-xs font-semibold ${genreFilters.includes(g) ? 'bg-accent text-black border-transparent' : 'bg-white/10 border-white/10'}`}
-                                >
-                                  {g}
-                                </button>
-                              ))}
-                            </div>
-                            {genres.length > 8 && (
-                              <button
-                                onClick={() => setShowAllGenres(prev => !prev)}
-                                className="mt-2 bg-transparent border-none text-slate-400 text-xs flex items-center gap-1.5"
-                              >
-                                {showAllGenres ? 'See less' : 'See more'} {showAllGenres ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                              </button>
-                            )}
-                            {genreFilters.length > 0 && (
-                              <div className="flex flex-wrap gap-1.5 mt-2">
-                                {genreFilters.map(g => (
-                                  <button
-                                    key={g}
-                                    onClick={() => toggleGenreFilter(g)}
-                                    className="flex items-center gap-1.5 px-2 py-1 rounded-full border border-accent/40 bg-accent/20 text-accent text-xs"
-                                  >
-                                    {g}
-                                    <X size={12} />
-                                  </button>
-                                ))}
-                                <button
-                                  onClick={clearGenreFilters}
-                                  className="px-2 py-1 rounded-full border border-white/20 bg-transparent text-slate-400 text-xs"
-                                >
-                                  Clear
-                                </button>
-                              </div>
-                            )}
-                         </div>
-                         <div className="flex justify-between items-center">
-                            <span className="text-sm">Minimum Rotten Tomato Score</span>
-                            <input className="toggle" type="checkbox" checked={useScoreFilter} onChange={(e) => setUseScoreFilter(e.target.checked)} />
-                         </div>
-                         {useScoreFilter && (
-                           <div className="flex items-center gap-2.5">
-                             <input type="range" value={minScore} onChange={(e) => setMinScore(Number(e.target.value))} className="flex-1" />
-                             <span className="text-sm min-w-[48px] text-right">{minScore}%</span>
-                           </div>
-                         )}
-                    </div>
-                )}
+                </div>
             </div>
         )}
 
         {/* WATCHLIST SUB-TABS */}
         {activeTab === 'watchlist' && (
-          <div className="flex flex-col gap-2.5 mb-3">
+          <div className="flex flex-col gap-2.5 mb-3 shrink-0">
             <div className="flex gap-2.5">
               <button
                 onClick={() => setWatchlistScope('mine')}
-                className={`flex-1 p-2.5 rounded-lg font-bold ${watchlistScope === 'mine' ? 'bg-accent text-black' : 'bg-white/10 text-white'}`}
+                className={`flex-1 p-2.5 rounded-lg font-bold ${watchlistScope === 'mine' ? 'bg-indigo-500 text-white' : 'bg-white/10 text-white'}`}
               >
                 My Watchlist
               </button>
               <button
                 onClick={() => setWatchlistScope('crew')}
-                className={`flex-1 p-2.5 rounded-lg font-bold flex items-center justify-center gap-1.5 ${watchlistScope === 'crew' ? 'bg-accent text-black' : 'bg-white/10 text-white'}`}
+                className={`flex-1 p-2.5 rounded-lg font-bold flex items-center justify-center gap-1.5 ${watchlistScope === 'crew' ? 'bg-indigo-500 text-white' : 'bg-white/10 text-white'}`}
               >
                 <Users size={16} /> Crew's Watchlist
               </button>
@@ -574,23 +505,77 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
         )}
 
         {/* LIST RENDERING */}
-        <div className="flex-1 overflow-y-auto pr-3" style={{ scrollbarGutter: 'stable' }}>
-            {activeTab === 'search' && !isWritingIn && results.map(m => (
-              <MovieRow
-                key={m.id}
-                movie={m}
-                onSelect={isEventMode ? () => handleSelect(m) : undefined}
-                showWatchlistAction={isWatchlistMode}
-                isInWatchlist={myWatchlist.some(item => item.id === m.id)}
-                onToggleWatchlist={handleWatchlistToggle}
-              />
-            ))}
-            {activeTab === 'watchlist' && watchlistScope === 'mine' && filteredMyWatchlist.map(m => <MovieRow key={m.id} movie={m} onSelect={() => handleSelect(m)} />)}
+        <div ref={listRef} className="flex-1 overflow-y-auto pr-3 min-h-0" style={{ scrollbarGutter: 'stable' }}>
+            {showFilters && activeTab !== 'theater' && !isWritingIn && (
+                <div className="mb-4 p-4 bg-slate-900 border border-white/10 rounded-xl space-y-4">
+                        <div>
+                        <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Genre</label>
+                        <div className="flex flex-wrap gap-2">
+                            <button 
+                                onClick={clearGenreFilters}
+                                className={`px-3 py-1 rounded-full text-xs font-bold border ${genreFilters.length === 0 ? 'bg-white text-black border-white' : 'border-white/10 text-slate-400'}`}
+                            >
+                                All
+                            </button>
+                            {DEFAULT_GENRES.map(g => (
+                            <button
+                                key={g}
+                                onClick={() => toggleGenreFilter(g)}
+                                className={`px-3 py-1 rounded-full text-xs font-bold border ${genreFilters.includes(g) ? 'bg-indigo-500 text-white border-indigo-500' : 'border-white/10 text-slate-400'}`}
+                            >
+                                {g}
+                            </button>
+                            ))}
+                        </div>
+                        </div>
+                        <div>
+                        <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Min Score: {minScore}%</label>
+                        <input 
+                            type="range" min="0" max="100" value={minScore} onChange={(e) => setMinScore(Number(e.target.value))} 
+                            className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer" style={{ background: `linear-gradient(to right, #6366f1 ${minScore}%, #1e293b ${minScore}%)` }}
+                        />
+                        </div>
+                </div>
+            )}
+
+            {activeTab === 'search' && !isWritingIn && (
+                <>
+                    <button 
+                      onClick={() => setIsWritingIn(true)}
+                      className="w-full py-2.5 px-4 mb-3 bg-[#121214]/50 border border-[#2a2a2e] rounded-lg flex items-center justify-between group hover:bg-[#121214] transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="p-1 bg-[#2a2a2e] rounded text-slate-400 group-hover:text-white transition-colors">
+                          <SquarePen size={12} />
+                        </div>
+                        <span className="text-xs font-medium text-slate-400 group-hover:text-slate-200 transition-colors">
+                          Can't find a movie?
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider">
+                        Write In
+                      </span>
+                    </button>
+
+                    {results.map(m => (
+                      <MovieCard
+                        key={m.id}
+                        movie={m}
+                        onClick={() => setSelectedMovie(m)}
+                        showWatchlistAction={isWatchlistMode}
+                        isInWatchlist={myWatchlist.some(item => item.id === m.id)}
+                        onToggleWatchlist={handleWatchlistToggle}
+                        onSelect={isEventMode ? () => handleSelect(m) : undefined}
+                      />
+                    ))}
+                </>
+            )}
+            {activeTab === 'watchlist' && watchlistScope === 'mine' && filteredMyWatchlist.map(m => <MovieCard key={m.id} movie={m} onClick={() => setSelectedMovie(m)} onSelect={() => handleSelect(m)} />)}
             {activeTab === 'watchlist' && watchlistScope === 'crew' && crewGroups.map(group => (
               <div key={group.count} className="mb-4">
                 <button
                   onClick={() => setCollapsedCrewGroups(prev => ({ ...prev, [group.count]: !prev[group.count] }))}
-                  className="w-full bg-none border-none text-accent mb-2.5 p-0 cursor-pointer flex items-center gap-2"
+                  className="w-full bg-none border-none text-indigo-400 mb-2.5 p-0 cursor-pointer flex items-center gap-2"
                 >
                   {collapsedCrewGroups[group.count] ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
                   <span className="text-sm tracking-wider">
@@ -665,7 +650,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                               <button
                                 key={g}
                                 onClick={() => setNewGenres(prev => prev.filter(item => item !== g))}
-                                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-accent/40 bg-accent/20 text-accent text-xs"
+                                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-indigo-500/40 bg-indigo-500/20 text-indigo-400 text-xs"
                               >
                                 {g}
                                 <X size={12} />
@@ -675,7 +660,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                         )}
                       </div>
                     </div>
-                    <button onClick={() => handleWriteIn()} className="bg-accent text-black p-4 rounded-lg font-bold">Save & Select</button>
+                    <button onClick={() => handleWriteIn()} className="bg-indigo-500 text-white p-4 rounded-lg font-bold">Save & Select</button>
                     <button onClick={() => { setIsWritingIn(false); setActiveTab('search') }} className="text-sm bg-transparent">Cancel</button>
                  </div>
             )}
@@ -701,7 +686,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                           placeholder="Search movies..."
                           value={theaterSearchTerm}
                           onChange={(e) => setTheaterSearchTerm(e.target.value)}
-                          className="bg-transparent border-none text-white w-full"
+                          className="bg-transparent border-none text-white w-full text-base"
                         />
                         {theaterSearchTerm && (
                           <button
@@ -721,9 +706,10 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                       {theaterResults.length > 0 && (
                         <div className="mt-3">
                           {theaterResults.map(m => (
-                            <MovieRow
+                            <MovieCard
                               key={m.id}
                               movie={m}
+                              onClick={() => setTheaterSelectedMovie(m)}
                               onSelect={() => {
                                 setTheaterSelectedMovie(m)
                                 setTheaterWriteInMode(false)
@@ -843,17 +829,32 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
             )}
         </div>
 
-        {activeTab === 'search' && !isWritingIn && (
-          <button
-            onClick={() => {
-              setActiveTab('search')
-              setIsWritingIn(true)
-            }}
-            className="w-full mt-3 bg-accent text-black p-3 rounded-lg font-bold"
-          >
-            + Write In Movie
-          </button>
-        )}
+        {/* Expanded Card Modal */}
+        <AnimatePresence>
+            {selectedMovie && (
+                <ExpandedCard 
+                    movie={selectedMovie}
+                    onClose={() => setSelectedMovie(null)}
+                    onAction={() => {
+                        if (activeTab === 'theater') {
+                            setTheaterSelectedMovie(selectedMovie)
+                            setTheaterWriteInMode(false)
+                            setTheaterSearchTerm('')
+                            setTheaterResults([])
+                            setTheaterError('')
+                            setSelectedMovie(null)
+                        } else if (isEventMode) {
+                            handleSelect(selectedMovie)
+                        } else {
+                            handleWatchlistToggle(selectedMovie)
+                        }
+                    }}
+                    actionLabel={activeTab === 'theater' ? 'Select for Trip' : (isEventMode ? 'Nominate' : (myWatchlist.some(m => m.id === selectedMovie.id) ? 'Remove from Watchlist' : 'Add to Watchlist'))}
+                    isAdded={!isEventMode && myWatchlist.some(m => m.id === selectedMovie.id)}
+                />
+            )}
+        </AnimatePresence>
+
       </motion.div>
     </div>
   )
@@ -863,69 +864,108 @@ function TabButton({ active, children, onClick }) {
     return <button onClick={onClick} className={`px-4 py-2 rounded-full whitespace-nowrap ${active ? 'bg-white text-black' : 'bg-white/10 text-white'} flex items-center gap-1.5 text-sm font-semibold`}>{children}</button>
 }
 
-function MovieRow({ movie, onSelect, showWatchlistAction = false, isInWatchlist = false, onToggleWatchlist }) {
-    const description = movie.description?.trim()
-    const scoreColor = movie.rt_score >= 80 ? 'text-green-400 border-green-400' : movie.rt_score >= 60 ? 'text-yellow-400 border-yellow-400' : 'text-slate-400 border-slate-400'
-    const yearLabel = movie.year ? ` (${movie.year})` : ''
-    const isClickable = typeof onSelect === 'function'
+function MovieCard({ movie, onClick, showWatchlistAction, isInWatchlist, onToggleWatchlist, onSelect }) {
     const posterUrl = movie.poster_path ? `${POSTER_BASE_URL}${movie.poster_path}` : null
+    const score = movie.rt_score || movie.vote_average ? Math.round(movie.rt_score || (movie.vote_average * 10)) + '%' : null
 
     return (
-      <div onClick={isClickable ? onSelect : undefined} className={`flex justify-between items-center p-3 mb-2 bg-white/5 rounded-lg gap-3 ${isClickable ? 'cursor-pointer' : ''}`}>
-        {posterUrl && <img src={posterUrl} alt={movie.title} className="w-10 h-14 object-cover rounded-md bg-slate-800" />}
-        <div className="flex-1 min-w-0">
-          <div className="font-semibold">
-            {movie.title}
-            {movie.year ? (
-              <span className="text-sm text-slate-400 ml-1.5">{yearLabel}</span>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap items-center gap-2 mt-1">
-            {movie.rt_score !== null && movie.rt_score !== undefined && (
-              <span
-                className={`border px-2 py-1 rounded-lg text-xs font-bold ${scoreColor}`}
-              >
-                🍅 {movie.rt_score}%
-              </span>
-            )}
-            {(movie.rt_score !== null && movie.rt_score !== undefined) && (
-              <span className="text-sm text-slate-600">|</span>
-            )}
-            <div className="text-sm text-slate-400">{movie.genre?.join(', ')}</div>
-          </div>
-          {description && (
-            <div className="text-sm text-slate-400 mt-1.5">
-              {description}
+      <div className="flex gap-3 p-3 bg-slate-900/40 border border-white/5 rounded-xl group cursor-pointer hover:bg-slate-800 transition-colors mb-3">
+        <div className="flex gap-3 flex-1 min-w-0 cursor-pointer" onClick={onClick}>
+            <div className="w-20 h-28 shrink-0 rounded-lg bg-slate-800 flex items-center justify-center relative overflow-hidden">
+              {posterUrl ? (
+                <img src={posterUrl} alt={movie.title} className="w-full h-full object-cover" />
+              ) : (
+                <Film className="text-white/20" size={20} />
+              )}
             </div>
-          )}
+
+            <div className="flex-1 flex flex-col justify-between py-1 min-w-0">
+              <div>
+                <div className="flex justify-between items-start gap-2">
+                  <h3 className="font-bold text-slate-100 text-sm leading-tight truncate w-full">{movie.title}</h3>
+                  {score && <span className="text-[10px] text-emerald-400 font-medium shrink-0">{score}</span>}
+                </div>
+                <p className="text-xs text-slate-500 mt-1">{movie.year || (movie.release_date ? movie.release_date.substring(0, 4) : '')}</p>
+                {movie.description && <p className="text-[10px] text-slate-600 mt-2 line-clamp-2 leading-relaxed">{movie.description}</p>}
+              </div>
+            </div>
         </div>
-        {showWatchlistAction && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              onToggleWatchlist?.(movie)
-            }}
-            className={`border w-9 h-9 rounded-full inline-flex items-center justify-center cursor-pointer shrink-0 ${isInWatchlist ? 'border-accent/50 bg-accent/20 text-accent' : 'border-white/30 bg-white/10 text-white'}`}
-            aria-pressed={isInWatchlist}
-            aria-label={isInWatchlist ? 'Remove from watchlist' : 'Add to watchlist'}
-            title={isInWatchlist ? 'Remove from watchlist' : 'Add to watchlist'}
-          >
-            <AnimatePresence mode="wait" initial={false}>
-              <motion.span
-                key={isInWatchlist ? 'check' : 'plus'}
-                initial={{ scale: 0.6, rotate: -90, opacity: 0 }}
-                animate={{ scale: 1, rotate: 0, opacity: 1 }}
-                exit={{ scale: 0.6, rotate: 90, opacity: 0 }}
-                transition={{ duration: 0.18 }}
-                className="flex"
-              >
-                {isInWatchlist ? <Check size={16} /> : <Plus size={16} />}
-              </motion.span>
-            </AnimatePresence>
-          </button>
-        )}
+        
+        <div className="flex items-center justify-end gap-3 mt-2 self-center">
+            {showWatchlistAction && (
+                <button 
+                  onClick={(e) => { e.stopPropagation(); onToggleWatchlist(movie) }}
+                  className={`p-2 rounded-full transition-all ${isInWatchlist ? 'text-indigo-500 bg-indigo-500/10' : 'text-slate-500 hover:text-slate-300'}`}
+                >
+                  {isInWatchlist ? <Check size={20} /> : <Plus size={20} />}
+                </button>
+            )}
+            {onSelect && (
+                <button 
+                  onClick={(e) => { e.stopPropagation(); onSelect(movie) }}
+                  className="h-9 px-4 rounded-full flex items-center gap-2 text-xs font-bold transition-all bg-white/5 text-slate-200 border border-white/10 hover:border-rose-500 hover:text-rose-500"
+                 >
+                  <Plus size={14} /> Nominate
+                </button>
+            )}
+        </div>
       </div>
+    )
+}
+
+function ExpandedCard({ movie, onClose, onAction, actionLabel, isAdded }) {
+    const posterUrl = movie.poster_path ? `${POSTER_BASE_URL}${movie.poster_path}` : null
+    
+    return (
+        <div 
+            className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md"
+            onClick={onClose}
+        >
+            <div 
+                className="w-full max-w-lg max-h-[85vh] bg-slate-900 rounded-3xl overflow-hidden shadow-2xl border border-white/10 flex flex-col"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="flex-1 overflow-y-auto p-6 pb-24">
+                    <div className="flex gap-4 mb-4">
+                        <div className="w-28 shrink-0 aspect-[2/3] rounded-xl overflow-hidden bg-slate-800 shadow-lg">
+                            {posterUrl ? (
+                                <img src={posterUrl} alt={movie.title} className="w-full h-full object-cover" />
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center text-slate-600"><Film size={24} /></div>
+                            )}
+                        </div>
+                        <div>
+                            <h2 className="text-2xl font-bold leading-tight mb-1">{movie.title}</h2>
+                            <div className="text-sm text-slate-400 mb-2">{movie.year || 'N/A'}</div>
+                            {movie.rt_score && (
+                                <div className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white/10 text-xs font-bold text-yellow-400">
+                                    <Star size={12} fill="currentColor" /> {movie.rt_score}%
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2 mb-6">
+                        {movie.genre?.map(g => (
+                            <span key={g} className="text-xs bg-white/10 px-2 py-1 rounded-full">{g}</span>
+                        ))}
+                    </div>
+                    <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap">
+                        {movie.description || "No description available."}
+                    </p>
+                </div>
+
+                {/* Action Bar */}
+                <div className="absolute bottom-0 left-0 right-0 p-6 pt-12 bg-gradient-to-t from-slate-900 via-slate-900 to-transparent flex justify-center gap-4 z-10">
+                    <button onClick={onAction} className={`flex-1 h-12 rounded-xl border-2 flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-95 font-bold ${isAdded ? 'bg-indigo-500/20 border-indigo-500 text-indigo-400' : 'bg-white/5 border-white/10 text-white hover:border-indigo-500 hover:text-indigo-500'}`}>
+                        {isAdded ? <><Check size={18} /> Added</> : <><Plus size={18} /> {actionLabel}</>}
+                        </button>
+                </div>
+            </div>
+            
+            <button className="absolute top-4 right-4 p-2 rounded-full bg-black/40 text-white/70 hover:text-white backdrop-blur-sm border border-white/10 z-20" onClick={onClose}>
+                <X size={20} />
+            </button>
+        </div>
     )
 }
 
@@ -938,13 +978,13 @@ function CrewWatchlistRow({ entry, onSelect }) {
     const posterUrl = movie.poster_path ? `${POSTER_BASE_URL}${movie.poster_path}` : null
 
     return (
-      <div onClick={onSelect} className="flex justify-between items-center p-3 mb-2 bg-white/5 rounded-lg cursor-pointer gap-3">
+      <div onClick={onSelect} className="flex justify-between items-center p-3 mb-2 bg-white/5 rounded-lg cursor-pointer gap-3 hover:bg-white/10 transition-colors">
         {posterUrl && <img src={posterUrl} alt={movie.title} className="w-10 h-14 object-cover rounded-md bg-slate-800" />}
         <div className="flex-1 min-w-0">
           <div className="font-semibold">{movie.title}</div>
           <div className="text-sm text-slate-400">{movie.genre?.join(', ')}</div>
           {description && (
-            <div className="text-sm text-slate-400 mt-1.5">
+            <div className="text-sm text-slate-400 mt-1.5 line-clamp-1">
               {description}
             </div>
           )}

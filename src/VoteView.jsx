@@ -1,10 +1,10 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from './supabaseClient'
-import { motion, useMotionValue, useTransform, AnimatePresence } from 'framer-motion'
+import { motion, useMotionValue, useTransform, AnimatePresence, animate } from 'framer-motion'
 import { 
-  Layers, LayoutGrid, ThumbsUp, Heart, Undo2, 
-  X, Film, Ticket, Clapperboard, ChevronLeft, Star, Check, Info
+  Layers, LayoutGrid, ThumbsUp, ThumbsDown, Heart, Undo2, 
+  X, Film, Ticket, Clapperboard, ChevronLeft, Star, Check, Info, Clock
 } from 'lucide-react'
 import { POSTER_BASE_URL } from './tmdbClient'
 import LoadingSpinner from './LoadingSpinner'
@@ -20,7 +20,8 @@ export default function VoteView() {
   
   // Stack State
   const [stackQueue, setStackQueue] = useState([])
-  const [exitDirection, setExitDirection] = useState(0) // Used for animation direction
+  const [exitDirection, setExitDirection] = useState(null)
+  const [history, setHistory] = useState([]) // Track vote history for Undo
   
   // Grid State
   const [selectedNomination, setSelectedNomination] = useState(null)
@@ -64,7 +65,7 @@ export default function VoteView() {
     setLoading(false)
   }
 
-  const handleVote = async (nominationId, voteType, fromStack = false) => {
+  const handleVote = async (nominationId, voteType) => {
     // Determine if we are removing a vote (toggling off)
     const currentVote = myVotes[nominationId]
     const isRemoving = currentVote === voteType
@@ -78,13 +79,23 @@ export default function VoteView() {
         return next
     })
     
-    // If voting from stack, remove from queue
-    if (fromStack) {
-      setExitDirection(voteType) // Tell the animation which way to go
-      setTimeout(() => {
-          setStackQueue(prev => prev.filter(n => n.id !== nominationId))
-          setExitDirection(0) // Reset
-      }, 0) // Immediate state update for exit animation trigger
+    if (!isRemoving) {
+        // Voting (Adding a vote)
+        setExitDirection(voteType)
+        setStackQueue(prev => prev.filter(n => n.id !== nominationId))
+        setHistory(prev => [...prev, nominationId])
+    } else {
+        // Removing a vote (Undo or Toggle off)
+        setStackQueue(prev => {
+            // Avoid duplicates
+            if (prev.some(n => n.id === nominationId)) return prev
+            const nom = nominations.find(n => n.id === nominationId)
+            if (!nom) return prev
+            // Add to front so it's the active card
+            return [nom, ...prev]
+        })
+        // Remove from history
+        setHistory(prev => prev.filter(id => id !== nominationId))
     }
 
     if (userId) {
@@ -102,7 +113,7 @@ export default function VoteView() {
   }
 
   const handleSkip = (nominationId) => {
-    setExitDirection(0) // 0 implies skip/down/fade
+    setExitDirection('skip')
     // Move to bottom of stack
     setStackQueue(prev => {
       const item = prev.find(n => n.id === nominationId)
@@ -112,12 +123,20 @@ export default function VoteView() {
     })
   }
 
+  const handleUndo = () => {
+    const lastId = history[history.length - 1]
+    if (!lastId) return
+    const voteType = myVotes[lastId]
+    // Calling handleVote with the same type triggers removal (toggle off)
+    if (voteType) handleVote(lastId, voteType, false)
+  }
+
   if (loading) return <LoadingSpinner label="Loading ballot..." />
 
   return (
-    <div className="min-h-screen w-full bg-slate-950 text-white flex flex-col overflow-hidden">
+    <div className="fixed inset-0 w-full h-full bg-gradient-to-b from-slate-950 via-slate-900 to-black text-white flex flex-col overflow-hidden">
       {/* HEADER */}
-      <div className="px-4 py-4 flex items-center justify-between bg-gradient-to-b from-black/80 to-transparent z-20">
+      <div className="px-4 py-4 flex items-center justify-between z-20">
         <div className="flex items-center gap-3">
             <button onClick={() => navigate(`/room/${code}`)} className="p-2 rounded-full bg-white/10 hover:bg-white/20">
                 <ChevronLeft size={20} />
@@ -147,9 +166,12 @@ export default function VoteView() {
         {viewMode === 'stack' ? (
             <StackView 
                 queue={stackQueue} 
-                onVote={handleVote} 
-                onSkip={handleSkip}
+                onVote={handleVote}
                 exitDirection={exitDirection}
+                onSkip={handleSkip}
+                onUndo={handleUndo}
+                canUndo={history.length > 0}
+                onDone={() => navigate(`/room/${code}`)}
             />
         ) : (
             <GridView 
@@ -175,17 +197,25 @@ export default function VoteView() {
   )
 }
 
-function StackView({ queue, onVote, onSkip, exitDirection }) {
+function StackView({ queue, onVote, onSkip, onUndo, canUndo, onDone, exitDirection }) {
     const activeItem = queue[0]
-    const nextItems = queue.slice(1, 5) // Show next 4 cards
+    const nextItems = queue.slice(1, 3) // Show next 2 cards (Total 3 visible)
 
     if (!activeItem) {
         return (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-                <div className="w-full aspect-[2/3] max-h-[60vh] border-4 border-dashed border-white/10 rounded-3xl flex flex-col items-center justify-center gap-4">
+                <div className="w-full aspect-[2/3] max-h-[55vh] border-4 border-dashed border-white/10 rounded-3xl flex flex-col items-center justify-center gap-4">
                     <Check size={64} className="text-green-500" />
                     <div className="text-2xl font-bold text-slate-200">All Voted!</div>
                     <p className="text-slate-400">Waiting for more nominations...</p>
+                    {canUndo && (
+                        <button onClick={onUndo} className="mt-4 px-6 py-3 bg-white/10 rounded-xl font-bold flex items-center gap-2 hover:bg-white/20">
+                            <Undo2 size={18} /> Undo Last Vote
+                        </button>
+                    )}
+                    <button onClick={onDone} className="mt-4 px-8 py-3 bg-indigo-500 text-white rounded-xl font-bold shadow-lg hover:bg-indigo-400 transition-colors">
+                        Done Voting
+                    </button>
                 </div>
             </div>
         )
@@ -193,18 +223,18 @@ function StackView({ queue, onVote, onSkip, exitDirection }) {
 
     return (
         <div className="flex-1 flex flex-col relative">
-            <div className="flex-1 relative flex items-center justify-center p-4">
+            <div className="flex-1 relative flex items-center justify-center p-4 pb-24">
                 {/* Background Cards */}
                 {nextItems.reverse().map((item, index) => {
-                    const depth = nextItems.length - 1 - index
+                    const depth = nextItems.length - index
                     const scale = 0.95 - (depth * 0.05)
-                    const translateY = -35 - (depth * 35)
+                    const translateY = -10 - (depth * 30) // Reduced spacing
                     const overlayOpacity = 0.2 + (depth * 0.15)
 
                     return (
                         <div 
                             key={item.id}
-                            className="absolute w-full max-w-sm aspect-[2/3] bg-slate-800 rounded-3xl border border-white/5 shadow-2xl overflow-hidden pointer-events-none transition-all duration-500 ease-in-out"
+                            className="absolute w-[90%] max-w-[340px] aspect-[2/3] max-h-[55vh] bg-slate-800 rounded-3xl border border-white/5 shadow-2xl overflow-hidden pointer-events-none transition-all duration-500 ease-in-out"
                             style={{
                                 zIndex: 10 - depth,
                                 transform: `scale(${scale}) translateY(${translateY}px)`,
@@ -218,25 +248,31 @@ function StackView({ queue, onVote, onSkip, exitDirection }) {
 
                 {/* Active Card (Draggable) */}
                 <AnimatePresence custom={exitDirection}>
-                    <DraggableCard 
-                        key={activeItem.id}
-                        item={activeItem}
-                        onVote={onVote}
-                        onSkip={onSkip}
-                    />
+                    {activeItem && (
+                        <DraggableCard key={activeItem.id} item={activeItem} onVote={onVote} onSkip={onSkip} />
+                    )}
                 </AnimatePresence>
             </div>
 
-            {/* Action Bar (Static in Stack View) */}
-            {activeItem && (
-                <div className="absolute bottom-8 left-0 right-0 flex justify-center gap-4 z-50">
-                    <ActionButton icon={X} color="text-red-500" borderColor="border-red-500" onClick={() => onVote(activeItem.id, -2, true)} />
-                    <ActionButton icon={Undo2} color="text-yellow-400" borderColor="border-yellow-400" onClick={() => onSkip(activeItem.id)} />
-                    <ActionButton icon={Heart} color="text-pink-500" borderColor="border-pink-500" onClick={() => onVote(activeItem.id, 2, true)} />
-                    <ActionButton icon={ThumbsUp} color="text-blue-500" borderColor="border-blue-500" onClick={() => onVote(activeItem.id, 1, true)} />
-                </div>
-            )}
+            {/* Action Bar */}
+            <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-4 z-50">
+                <ActionButton icon={Undo2} color="text-yellow-400" borderColor="border-yellow-400" onClick={onUndo} disabled={!canUndo} />
+                <ActionButton icon={Heart} color="text-pink-500" borderColor="border-pink-500" fill onClick={() => onVote(activeItem.id, 2)} />
+                <ActionButton icon={Clock} color="text-slate-300" borderColor="border-slate-500" onClick={() => onSkip(activeItem.id)} />
+            </div>
         </div>
+    )
+}
+
+function ActionButton({ icon: Icon, color, borderColor, onClick, fill = false, disabled = false }) {
+    return (
+        <button 
+            onClick={onClick}
+            disabled={disabled}
+            className={`w-14 h-14 rounded-full bg-slate-900 border-2 ${borderColor} ${color} flex items-center justify-center shadow-lg transition-transform ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:scale-110 active:scale-95'}`}
+        >
+            <Icon size={24} fill={fill ? "currentColor" : "none"} className="opacity-80" />
+        </button>
     )
 }
 
@@ -244,113 +280,80 @@ function DraggableCard({ item, onVote, onSkip }) {
     const [isFlipped, setIsFlipped] = useState(false)
     const x = useMotionValue(0)
     const y = useMotionValue(0)
+    const isDragging = useRef(false)
     
-    const rotate = useTransform(x, [-200, 200], [-25, 25])
+    // Smoother rotation (less wobble)
+    const rotate = useTransform(x, [-200, 200], [-10, 10])
     
     // Opacity transforms for stamps
-    const opacityLike = useTransform(x, [50, 150], [0, 1])
-    const opacityNope = useTransform(x, [-50, -150], [0, 1])
-    const opacitySuper = useTransform(y, [-50, -150], [0, 1])
+    const opacityLike = useTransform(x, [25, 100], [0, 1])
+    const opacityNope = useTransform(x, [-25, -100], [0, 1])
+    const opacitySuper = useTransform(y, [-25, -100], [0, 1])
+    const opacitySkip = useTransform(y, [25, 100], [0, 1])
     
     const handleDragEnd = (event, info) => {
+        setTimeout(() => { isDragging.current = false }, 50)
         const threshold = 100
         const xOffset = info.offset.x
         const yOffset = info.offset.y
-
-        // Prioritize Super Like (Up)
+        
         if (yOffset < -threshold && Math.abs(yOffset) > Math.abs(xOffset)) {
-            onVote(item.id, 2, true) // Super Like
-        } 
-        // Then Horizontal
-        else if (xOffset > threshold) {
-            onVote(item.id, 1, true) // Like
-        } else if (info.offset.x < -threshold) {
-            onVote(item.id, -2, true) // Dislike
+             onVote(item.id, 2) // Super Like
+        } else if (yOffset > threshold && Math.abs(yOffset) > Math.abs(xOffset)) {
+             onSkip(item.id) // Skip (Down)
+        } else if (xOffset > threshold) {
+             onVote(item.id, 1) // Like
+        } else if (xOffset < -threshold) {
+             onVote(item.id, -2) // Dislike
+        } else {
+            // Snap back with smoother spring
+            animate(x, 0, { type: 'spring', stiffness: 300, damping: 25 })
+            animate(y, 0, { type: 'spring', stiffness: 300, damping: 25 })
         }
     }
 
-    // Variants for exit animation
-    const cardVariants = {
-        enter: { scale: 0.95, opacity: 1, y: -35 },
-        center: { scale: 1, opacity: 1, y: 0, x: 0, rotate: 0, transition: { duration: 0.3 } },
-        exit: (custom) => {
-            let xDest = 0
-            let yDest = 0
-            let rot = 0
-            
-            if (custom === 1) { xDest = 500; rot = 20; } // Like
-            else if (custom === -2) { xDest = -500; rot = -20; } // Dislike
-            else if (custom === 2) { yDest = -500; } // Super Like
-            else { yDest = 200; } // Skip/Other
-
-            return {
-                x: xDest,
-                y: yDest,
-                rotate: rot,
-                opacity: 0,
-                transition: { duration: 0.3, ease: "easeIn" }
-            }
+    const variants = {
+        enter: { scale: 0.9, opacity: 1, y: -40 },
+        center: { scale: 1, opacity: 1, y: 0, x: 0, rotate: 0, transition: { duration: 0.4, ease: [0.16, 1, 0.3, 1] } },
+        exit: (direction) => {
+            const duration = 0.2
+            if (direction === 1) return { x: 500, opacity: 0, rotate: 10, transition: { duration } }
+            if (direction === -2) return { x: -500, opacity: 0, rotate: -10, transition: { duration } }
+            if (direction === 2) return { y: -500, opacity: 0, transition: { duration } }
+            if (direction === 'skip') return { y: 500, opacity: 0, transition: { duration } }
+            return { scale: 0.9, opacity: 0, transition: { duration } }
         }
     }
 
     return (
         <motion.div
-            variants={cardVariants}
+            variants={variants}
             initial="enter"
             animate="center"
             exit="exit"
             style={{ x, y, rotate, zIndex: 50, touchAction: 'none' }}
             drag
-            dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }} // Snap back if released early
-            dragElastic={0.7}
+            dragMomentum={false}
+            onDragStart={() => { isDragging.current = true }}
             onDragEnd={handleDragEnd}
-            className="absolute w-full max-w-sm aspect-[2/3] cursor-grab active:cursor-grabbing perspective-1000"
+            onClick={() => !isDragging.current && setIsFlipped(!isFlipped)}
+            className="absolute w-[90%] max-w-[340px] aspect-[2/3] max-h-[55vh] cursor-grab active:cursor-grabbing perspective-1000 touch-none select-none"
         >
-            {/* Stamps */}
-            <motion.div style={{ opacity: opacityLike }} className="absolute top-8 left-8 z-50 border-4 border-blue-500 text-blue-500 rounded-lg px-4 py-2 text-4xl font-black uppercase -rotate-12 tracking-widest bg-black/20 backdrop-blur-sm pointer-events-none">
-                LIKE
-            </motion.div>
-            <motion.div style={{ opacity: opacityNope }} className="absolute top-8 right-8 z-50 border-4 border-red-500 text-red-500 rounded-lg px-4 py-2 text-4xl font-black uppercase rotate-12 tracking-widest bg-black/20 backdrop-blur-sm pointer-events-none">
-                NOPE
-            </motion.div>
-            <motion.div style={{ opacity: opacitySuper }} className="absolute bottom-24 left-1/2 -translate-x-1/2 z-50 border-4 border-pink-500 text-pink-500 rounded-lg px-4 py-2 text-3xl font-black uppercase tracking-widest bg-black/20 backdrop-blur-sm pointer-events-none whitespace-nowrap">
-                SUPER LIKE
-            </motion.div>
+            <motion.div style={{ opacity: opacityLike }} className="absolute top-10 left-10 z-50 border-4 border-blue-400 text-blue-400 rounded-lg px-4 py-2 text-4xl font-black uppercase -rotate-12 tracking-widest bg-black/60 backdrop-blur-md shadow-2xl pointer-events-none">LIKE</motion.div>
+            <motion.div style={{ opacity: opacityNope }} className="absolute top-10 right-10 z-50 border-4 border-red-500 text-red-500 rounded-lg px-4 py-2 text-4xl font-black uppercase rotate-12 tracking-widest bg-black/60 backdrop-blur-md shadow-2xl pointer-events-none">NOPE</motion.div>
+            <motion.div style={{ opacity: opacitySuper }} className="absolute bottom-12 left-1/2 -translate-x-1/2 z-50 border-4 border-pink-500 text-pink-500 rounded-lg px-4 py-2 text-3xl font-black uppercase tracking-widest bg-black/60 backdrop-blur-md shadow-2xl pointer-events-none whitespace-nowrap -rotate-12">SUPER LIKE</motion.div>
+            <motion.div style={{ opacity: opacitySkip }} className="absolute top-12 left-1/2 -translate-x-1/2 z-50 border-4 border-amber-400 text-amber-400 rounded-lg px-4 py-2 text-3xl font-black uppercase tracking-widest bg-black/60 backdrop-blur-md shadow-2xl pointer-events-none whitespace-nowrap rotate-12">SKIP</motion.div>
 
-            {/* Card Content (Flipper) */}
-            <motion.div 
-                className="w-full h-full relative [transform-style:preserve-3d] transition-transform duration-500"
-                style={{ transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)' }}
-            >
-                {/* Front */}
-                <div 
-                    className="absolute inset-0 [backface-visibility:hidden] bg-slate-900 rounded-3xl overflow-hidden shadow-2xl border border-white/10"
-                    onClick={() => setIsFlipped(true)}
-                >
-                    <CardVisuals movie={item.movie} showMeta isTheater={item.nomination_type === 'theater'} />
-                    <div className="absolute top-4 right-4 p-2 rounded-full bg-black/40 text-white/70 pointer-events-none">
-                        <Info size={20} />
-                    </div>
-                </div>
-
-                {/* Back */}
-                <div 
-                    className="absolute inset-0 [backface-visibility:hidden] bg-slate-900 rounded-3xl overflow-hidden shadow-2xl border border-white/10 p-6 flex flex-col rotate-y-180" 
-                    style={{ transform: 'rotateY(180deg)', cursor: 'pointer' }}
-                    onClick={(e) => { e.stopPropagation(); setIsFlipped(false); }}
-                >
+            {/* Card Content */}
+            <div className="w-full h-full relative bg-slate-900 rounded-3xl overflow-hidden shadow-2xl border border-white/10">
+                {/* Back Layer (Info) - Always rendered behind */}
+                <div className="absolute inset-0 p-6 flex flex-col bg-slate-900 z-0">
                     <div className="flex-1 overflow-y-auto">
                         <div className="flex gap-4 mb-4">
                             <div className="w-24 shrink-0 aspect-[2/3] rounded-lg overflow-hidden bg-slate-800 shadow-lg">
                                 <CardVisuals movie={item.movie} isTheater={item.nomination_type === 'theater'} />
                             </div>
                             <div>
-                                {item.nomination_type === 'theater' && (
-                                    <div className="text-[10px] font-bold text-amber-400 mb-1 flex items-center gap-1 uppercase tracking-wider">
-                                        <Ticket size={12} />
-                                        {item.theater_name || 'Theater Trip'}
-                                    </div>
-                                )}
                                 <h2 className="text-xl font-bold leading-tight mb-1">{item.movie.title}</h2>
                                 <div className="text-sm text-slate-400 mb-2">{item.movie.year || 'N/A'}</div>
                                 {item.movie.rt_score && (
@@ -375,53 +378,113 @@ function DraggableCard({ item, onVote, onSkip }) {
                         </p>
                     </div>
                 </div>
-            </motion.div>
+
+                {/* Front Layer (Poster) - Slides up/down */}
+                <motion.div 
+                    initial={false}
+                    animate={{ y: isFlipped ? '-100%' : '0%' }}
+                    transition={{ 
+                        type: "spring", 
+                        stiffness: isFlipped ? 120 : 250, 
+                        damping: isFlipped ? 20 : 35 
+                    }}
+                    className="absolute inset-0 bg-slate-900 z-10"
+                >
+                    <CardVisuals movie={item.movie} showMeta isTheater={item.nomination_type === 'theater'} />
+                    <div className="absolute top-4 right-4 p-2 rounded-full bg-black/40 text-white/70 pointer-events-none">
+                        <Info size={20} />
+                    </div>
+                </motion.div>
+            </div>
         </motion.div>
     )
 }
 
-function ActionButton({ icon: Icon, color, borderColor, onClick }) {
+function GridView({ nominations, myVotes, onSelect }) {
+    const [filter, setFilter] = useState('all')
+
+    const filteredNominations = nominations.filter(nom => {
+        const vote = myVotes[nom.id]
+        if (filter === 'missing') return !vote
+        if (filter === 'voted') return !!vote
+        if (filter === 'liked') return vote === 1
+        if (filter === 'disliked') return vote === -2
+        if (filter === 'superliked') return vote === 2
+        return true
+    })
+
+    const toggleFilter = (target) => {
+        setFilter(prev => prev === target ? 'all' : target)
+    }
+
     return (
-        <button 
-            onClick={onClick}
-            className={`w-14 h-14 rounded-full bg-slate-900 border-2 ${borderColor} ${color} flex items-center justify-center shadow-lg hover:scale-110 active:scale-95 transition-transform`}
-        >
-            <Icon size={24} fill="currentColor" className="opacity-80" />
-        </button>
+        <div className="flex flex-col h-full w-full">
+            {/* Filters */}
+            <div className="px-4 py-2 flex gap-2 overflow-x-auto scrollbar-hide shrink-0 pb-3 items-center">
+                <FilterButton label="Missing Vote" active={filter === 'missing'} onClick={() => toggleFilter('missing')} activeColor="bg-indigo-500 border-indigo-500 text-white" />
+                <FilterButton label="Voted" active={filter === 'voted'} onClick={() => toggleFilter('voted')} activeColor="bg-indigo-500 border-indigo-500 text-white" />
+                
+                <div className="w-px h-5 bg-white/10 mx-1 shrink-0" />
+
+                <FilterButton active={filter === 'liked'} onClick={() => toggleFilter('liked')} activeColor="bg-blue-500 border-blue-500 text-white" icon={ThumbsUp} />
+                <FilterButton active={filter === 'disliked'} onClick={() => toggleFilter('disliked')} activeColor="bg-red-500 border-red-500 text-white" icon={ThumbsDown} />
+                <FilterButton active={filter === 'superliked'} onClick={() => toggleFilter('superliked')} activeColor="bg-pink-500 border-pink-500 text-white" icon={Heart} />
+            </div>
+
+            {/* Grid Content */}
+            <div className="flex-1 overflow-y-auto p-4 pt-0 pb-24">
+                <div className="grid grid-cols-3 gap-3">
+                    {filteredNominations.map(nom => {
+                        const vote = myVotes[nom.id]
+                        
+                        return (
+                            <div 
+                                key={nom.id}
+                                onClick={() => onSelect(nom)}
+                                className="relative aspect-[2/3] rounded-lg overflow-hidden bg-slate-800 border border-white/10 shadow-sm cursor-pointer"
+                            >
+                                <CardVisuals movie={nom.movie} showMeta={false} isTheater={nom.nomination_type === 'theater'} />
+                                
+                                {/* Small Title Overlay */}
+                                <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/90 to-transparent">
+                                    <p className="text-xs font-bold text-white leading-tight line-clamp-3">{nom.movie.title}</p>
+                                </div>
+                                
+                                {/* Subtle Vote Indicator */}
+                                {vote && (
+                                    <div className="absolute top-1 right-1 p-1.5 rounded-full bg-black/60 backdrop-blur-sm border border-white/10">
+                                        {vote === 1 && <ThumbsUp size={14} className="text-blue-500" fill="currentColor" />}
+                                        {vote === -2 && <ThumbsDown size={14} className="text-red-500" />}
+                                        {vote === 2 && <Heart size={14} className="text-pink-500" fill="currentColor" />}
+                                    </div>
+                                )}
+                            </div>
+                        )
+                    })}
+                </div>
+                {filteredNominations.length === 0 && (
+                    <div className="text-center py-10 text-slate-500 text-sm">
+                        No movies found.
+                    </div>
+                )}
+            </div>
+        </div>
     )
 }
 
-function GridView({ nominations, myVotes, onSelect }) {
+function FilterButton({ label, active, onClick, activeColor = "bg-white text-black border-white", icon: Icon }) {
     return (
-        <div className="p-4 grid grid-cols-3 gap-3 pb-24 overflow-y-auto h-full content-start">
-            {nominations.map(nom => {
-                const vote = myVotes[nom.id]
-                
-                return (
-                    <div 
-                        key={nom.id}
-                        onClick={() => onSelect(nom)}
-                        className="relative aspect-[2/3] rounded-lg overflow-hidden bg-slate-800 border border-white/10 shadow-sm cursor-pointer"
-                    >
-                        <CardVisuals movie={nom.movie} showMeta={false} isTheater={nom.nomination_type === 'theater'} />
-                        
-                        {/* Small Title Overlay */}
-                        <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/90 to-transparent">
-                            <p className="text-[10px] font-bold text-white leading-tight line-clamp-2">{nom.movie.title}</p>
-                        </div>
-                        
-                        {/* Subtle Vote Indicator */}
-                        {vote && (
-                            <div className="absolute top-1 right-1 p-1 rounded-full bg-black/60 backdrop-blur-sm border border-white/10">
-                                {vote === 1 && <ThumbsUp size={10} className="text-blue-500" fill="currentColor" />}
-                                {vote === -2 && <X size={10} className="text-red-500" />}
-                                {vote === 2 && <Heart size={10} className="text-pink-500" fill="currentColor" />}
-                            </div>
-                        )}
-                    </div>
-                )
-            })}
-        </div>
+        <button
+            onClick={onClick}
+            className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                active 
+                    ? activeColor 
+                    : 'bg-transparent border-white/10 text-slate-400 hover:border-white/30 hover:text-slate-200'
+            }`}
+        >
+            {Icon && <Icon size={16} fill={active ? "currentColor" : "none"} />}
+            {label}
+        </button>
     )
 }
 
@@ -474,9 +537,9 @@ function ExpandedCard({ nom, vote, onVote, onClose }) {
 
                 {/* Action Bar */}
                 <div className="absolute bottom-0 left-0 right-0 p-6 pt-12 bg-gradient-to-t from-slate-900 via-slate-900 to-transparent flex justify-center gap-4 z-10">
-                    <ActionButton icon={X} color={vote === -2 ? "text-white !bg-red-500" : "text-red-500"} borderColor="border-red-500" onClick={() => onVote(nom.id, -2)} />
-                    <ActionButton icon={Heart} color={vote === 2 ? "text-white !bg-pink-500" : "text-pink-500"} borderColor="border-pink-500" onClick={() => onVote(nom.id, 2)} />
-                    <ActionButton icon={ThumbsUp} color={vote === 1 ? "text-white !bg-blue-500" : "text-blue-500"} borderColor="border-blue-500" onClick={() => onVote(nom.id, 1)} />
+                    <ActionButton icon={ThumbsDown} color={vote === -2 ? "text-white !bg-red-500" : "text-red-500"} borderColor="border-red-500" onClick={() => onVote(nom.id, -2)} />
+                    <ActionButton icon={Heart} color={vote === 2 ? "text-white !bg-pink-500" : "text-pink-500"} borderColor="border-pink-500" fill={true} onClick={() => onVote(nom.id, 2)} />
+                    <ActionButton icon={ThumbsUp} color={vote === 1 ? "text-white !bg-blue-500" : "text-blue-500"} borderColor="border-blue-500" fill={true} onClick={() => onVote(nom.id, 1)} />
                 </div>
             </div>
             

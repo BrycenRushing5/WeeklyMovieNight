@@ -143,16 +143,16 @@ export default function ProfileView({ session }) {
   if (loading) return <LoadingSpinner label="Loading profile..." />
 
   return (
-    <div className="pb-10 h-full overflow-y-auto pr-3">
-      <Link to="/" className="no-underline">
-        <button className="bg-transparent text-slate-400 p-0 mb-5 flex items-center gap-1.5">
-          <ChevronLeft size={20} /> Back to Hub
+    <div className="fixed inset-0 w-full h-full bg-gradient-to-b from-slate-950 via-slate-900 to-black text-white overflow-y-auto p-6">
+      <Link to="/" className="no-underline inline-block mb-6">
+        <button className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-colors">
+          <ChevronLeft size={24} />
         </button>
       </Link>
 
-      <div className="bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-2xl p-4 mb-5 flex items-center gap-4">
-        <div className="w-14 h-14 min-w-[54px] min-h-[54px] shrink-0 rounded-full bg-accent/20 flex items-center justify-center">
-          <User size={26} className="text-accent" />
+      <div className="bg-slate-900 border border-white/10 rounded-3xl p-6 mb-6 flex items-center gap-5 shadow-xl">
+        <div className="w-16 h-16 shrink-0 rounded-full bg-indigo-500/20 flex items-center justify-center border border-indigo-500/30">
+          <User size={32} className="text-indigo-400" />
         </div>
         <div>
           <div className="flex items-center gap-2.5 flex-wrap">
@@ -183,7 +183,7 @@ export default function ProfileView({ session }) {
                 type="button"
                 onClick={handleDisplayNameSave}
                 disabled={savingDisplayName}
-                className="bg-accent text-black px-3.5 py-2 rounded-lg font-bold"
+                className="bg-indigo-500 text-white px-3.5 py-2 rounded-lg font-bold"
               >
                 {savingDisplayName ? 'Saving...' : 'Save'}
               </button>
@@ -207,21 +207,21 @@ export default function ProfileView({ session }) {
       </div>
 
       <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3 mb-6">
-        <div className="bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-2xl p-4">
+        <div className="bg-slate-900 border border-white/10 rounded-2xl p-5">
           <div className="text-sm flex items-center gap-1.5 text-slate-400">
             <Trophy size={16} /> The Coordinator
           </div>
           <div className="text-3xl font-extrabold">{coordinatorCount}</div>
           <div className="text-sm">Events you created</div>
         </div>
-        <div className="bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-2xl p-4">
+        <div className="bg-slate-900 border border-white/10 rounded-2xl p-5">
           <div className="text-sm flex items-center gap-1.5 text-slate-400">
             <Target size={16} /> Nomination Success
           </div>
           <div className="text-3xl font-extrabold">{nominationSuccess}%</div>
           <div className="text-sm">Your picks that won</div>
         </div>
-        <div className="bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-2xl p-4">
+        <div className="bg-slate-900 border border-white/10 rounded-2xl p-5">
           <div className="text-sm flex items-center gap-1.5 text-slate-400">
             <Sparkles size={16} /> Genre Junkie
           </div>
@@ -231,7 +231,7 @@ export default function ProfileView({ session }) {
       </div>
 
       <div className="mb-3 flex items-center gap-2">
-        <Film size={18} className="text-accent" />
+        <Film size={18} className="text-rose-500" />
         <h2 className="m-0 text-xl font-bold">Review History</h2>
       </div>
 
@@ -249,7 +249,7 @@ export default function ProfileView({ session }) {
                 <Star size={14} /> {review.rating}/10
               </span>
               {review.would_watch_again && (
-                <span className="flex items-center gap-1.5 text-accent font-semibold">
+                <span className="flex items-center gap-1.5 text-indigo-400 font-semibold">
                   <ThumbsUp size={14} /> Would watch again
                 </span>
               )}

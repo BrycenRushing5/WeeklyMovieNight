@@ -26,7 +26,7 @@ export default function EventView() {
   const [userId, setUserId] = useState(null)
   const [myNominationsCount, setMyNominationsCount] = useState(0)
   const [totalNominations, setTotalNominations] = useState(0)
-  const [hasVoted, setHasVoted] = useState(false)
+  const [myVotesCount, setMyVotesCount] = useState(0)
   const [groupShareCode, setGroupShareCode] = useState('')
   const [copied, setCopied] = useState(false)
   const [showAddAudience, setShowAddAudience] = useState(false)
@@ -132,15 +132,15 @@ export default function EventView() {
       }
 
       if (currentUserId) {
-        const { data: voteData } = await supabase
+        const { count } = await supabase
           .from('votes')
-          .select('id')
+          .select('*', { count: 'exact', head: true })
           .eq('event_id', code)
           .eq('user_id', currentUserId)
-          .limit(1)
-        if (active) setHasVoted((voteData || []).length > 0)
+        
+        if (active) setMyVotesCount(count || 0)
       } else if (active) {
-        setHasVoted(false)
+        setMyVotesCount(0)
       }
 
       // Fetch Selected Movie & User Review
@@ -383,11 +383,11 @@ export default function EventView() {
     ? `You nominated ${myNominationsCount} movie${myNominationsCount === 1 ? '' : 's'}!`
     : 'Add suggestions'
 
-  const voteStatus = hasVoted
-    ? 'Ballot submitted'
-    : totalNominations > 0
-      ? `${totalNominations} movie${totalNominations === 1 ? '' : 's'} to vote for!`
-      : 'No nominations yet'
+  const voteStatus = totalNominations === 0
+    ? 'No nominations yet'
+    : myVotesCount >= totalNominations
+      ? 'Ballot submitted'
+      : `${totalNominations - myVotesCount} movie${(totalNominations - myVotesCount) === 1 ? '' : 's'} to vote for!`
 
   const hasSelectedMovie = event?.selected_movie_id || event?.selected_nomination_id
   const revealStatus = hasSelectedMovie 

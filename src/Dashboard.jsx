@@ -7,7 +7,7 @@ import {
   LogOut, Plus, User, Home, Film, Lightbulb, 
   Settings, Filter, X, Calendar, MapPin, 
   ChevronRight, Star, Trash2, MoreHorizontal, Search,
-  Users, Trophy, ChevronDown, Heart, Check
+  Users, Trophy, ChevronDown, Heart, Check, MessageSquare, ThumbsUp, Edit, CornerDownRight, ChevronLeft
 } from "lucide-react"
 import DateTimePickerSheet from "./DateTimePickerSheet"
 import { POSTER_BASE_URL } from './tmdbClient'
@@ -58,6 +58,9 @@ const Dashboard = ({ session }) => {
   // Create Crew State
   const [newCrewName, setNewCrewName] = useState("")
   const [creatingCrew, setCreatingCrew] = useState(false)
+
+  // Feedback State
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false)
 
   // Date Picker
   const [showDateTimePicker, setShowDateTimePicker] = useState(false)
@@ -412,12 +415,20 @@ const Dashboard = ({ session }) => {
         >
             {/* --- IDEAS TAB (Index 0) --- */}
             <div ref={ideasRef} className="w-[100vw] h-full overflow-y-auto px-4 pb-24 scrollbar-hide">
-                <div className="flex flex-col items-center justify-center h-[60vh] text-center p-6">
-                    <div className="w-20 h-20 bg-[var(--theme-accent)]/10 rounded-full flex items-center justify-center mb-4">
-                        <Lightbulb size={40} className="text-[var(--theme-accent)]" />
+                <div className="flex flex-col items-center justify-center h-[70vh] max-w-md mx-auto">
+                    <div className="w-20 h-20 bg-[var(--theme-accent)]/10 rounded-full flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(251,191,36,0.2)]">
+                        <Lightbulb size={40} className="text-amber-400" />
                     </div>
-                    <h2 className="text-2xl font-bold mb-2">Ideas Board</h2>
-                    <p className="text-slate-400">This feature is a work in progress. Soon you'll be able to save themes and movie night ideas here!</p>
+                    <h2 className="text-3xl font-black mb-3 text-center">Ideas & Feedback</h2>
+                    <p className="text-slate-400 text-center mb-8 text-sm leading-relaxed px-6">
+                        Help us improve the app! Submit your ideas for new features or feedback on your experience.
+                    </p>
+                    <button
+                        onClick={() => setShowFeedbackModal(true)}
+                        className="bg-amber-400 text-black font-black py-4 px-8 rounded-xl shadow-lg hover:bg-amber-300 transition-colors active:scale-95"
+                    >
+                        Improve the App
+                    </button>
                 </div>
             </div>
 
@@ -929,6 +940,13 @@ const Dashboard = ({ session }) => {
         )}
       </AnimatePresence>
 
+      {/* FEEDBACK MODAL */}
+      <AnimatePresence>
+        {showFeedbackModal && (
+            <FeedbackModal userId={userId} onClose={() => setShowFeedbackModal(false)} />
+        )}
+      </AnimatePresence>
+
       {/* REMOVE CONFIRM MODAL */}
       <AnimatePresence>
         {showRemoveModal && (
@@ -1010,6 +1028,416 @@ function ExpandedCard({ movie, onClose, onRemove, onNominate }) {
             <button className="absolute top-4 right-4 p-2 rounded-full bg-black/40 text-white/70 hover:text-white backdrop-blur-sm border border-white/10 z-20" onClick={onClose}>
                 <X size={20} />
             </button>
+        </div>
+    )
+}
+
+function FeedbackModal({ userId, onClose }) {
+    const [view, setView] = useState('list') // list, form, detail
+    const [items, setItems] = useState([])
+    const [myVotes, setMyVotes] = useState(new Set())
+    const [loading, setLoading] = useState(true)
+    const [filter, setFilter] = useState('all') // all, mine
+    const [activeItem, setActiveItem] = useState(null)
+    const [comments, setComments] = useState([])
+    const [newComment, setNewComment] = useState('')
+    const [commentLoading, setCommentLoading] = useState(false)
+    const [editingCommentId, setEditingCommentId] = useState(null)
+    const [editCommentContent, setEditCommentContent] = useState('')
+
+    // Form State
+    const [formData, setFormData] = useState({ type: 'idea', content: '', importance: 5 })
+    const [submitting, setSubmitting] = useState(false)
+    const [editingId, setEditingId] = useState(null)
+
+    useEffect(() => {
+        fetchFeedback()
+    }, [])
+
+    useEffect(() => {
+        if (activeItem) fetchComments(activeItem.id)
+    }, [activeItem])
+
+    const fetchFeedback = async () => {
+        setLoading(true)
+        const { data: feedbackData } = await supabase
+            .from('app_feedback')
+            .select(`
+                *,
+                votes:app_feedback_votes(count),
+                comments:app_feedback_comments(count)
+            `)
+            .order('created_at', { ascending: false })
+        
+        const { data: myVoteData } = await supabase
+            .from('app_feedback_votes')
+            .select('feedback_id')
+            .eq('user_id', userId)
+        
+        if (feedbackData) setItems(feedbackData)
+        if (myVoteData) setMyVotes(new Set(myVoteData.map(v => v.feedback_id)))
+        setLoading(false)
+    }
+
+    const fetchComments = async (feedbackId) => {
+        setCommentLoading(true)
+        const { data } = await supabase
+            .from('app_feedback_comments')
+            .select('*')
+            .eq('feedback_id', feedbackId)
+            .order('created_at', { ascending: true })
+        setComments(data || [])
+        setCommentLoading(false)
+    }
+
+    const handleVote = async (e, item) => {
+        e.stopPropagation()
+        const isVoted = myVotes.has(item.id)
+        
+        // Optimistic update
+        setMyVotes(prev => {
+            const next = new Set(prev)
+            if (isVoted) next.delete(item.id)
+            else next.add(item.id)
+            return next
+        })
+        
+        // Update items list
+        setItems(prev => prev.map(i => {
+            if (i.id === item.id) {
+                const currentCount = i.votes?.[0]?.count || 0
+                return { ...i, votes: [{ count: isVoted ? currentCount - 1 : currentCount + 1 }] }
+            }
+            return i
+        }))
+
+        // Update active item if it matches
+        if (activeItem && activeItem.id === item.id) {
+             setActiveItem(prev => {
+                 const currentCount = prev.votes?.[0]?.count || 0
+                 return { ...prev, votes: [{ count: isVoted ? currentCount - 1 : currentCount + 1 }] }
+             })
+        }
+
+        if (isVoted) {
+            await supabase.from('app_feedback_votes').delete().eq('feedback_id', item.id).eq('user_id', userId)
+        } else {
+            await supabase.from('app_feedback_votes').insert([{ feedback_id: item.id, user_id: userId }])
+        }
+    }
+
+    const handleSubmit = async () => {
+        if (!formData.content.trim()) return
+        setSubmitting(true)
+        document.activeElement.blur()
+        
+        const payload = {
+            user_id: userId,
+            type: formData.type,
+            content: formData.content,
+            importance: formData.importance
+        }
+
+        let error
+        if (editingId) {
+            const { error: updateError } = await supabase
+                .from('app_feedback')
+                .update(payload)
+                .eq('id', editingId)
+            error = updateError
+        } else {
+            const { error: insertError } = await supabase
+                .from('app_feedback')
+                .insert([payload])
+            error = insertError
+        }
+
+        setSubmitting(false)
+        if (error) {
+            alert("Error: " + error.message)
+        } else {
+            setFormData({ type: 'idea', content: '', importance: 5 })
+            setEditingId(null)
+            setView('list')
+            fetchFeedback()
+        }
+    }
+
+    const handleUpdateComment = async (commentId) => {
+        if (!editCommentContent.trim()) return
+        const { error } = await supabase
+            .from('app_feedback_comments')
+            .update({ content: editCommentContent.trim() })
+            .eq('id', commentId)
+        
+        if (error) {
+            alert("Error updating comment: " + error.message)
+        } else {
+            setEditingCommentId(null)
+            setEditCommentContent('')
+            fetchComments(activeItem.id)
+        }
+    }
+
+    const handleEdit = (item) => {
+        setFormData({
+            type: item.type,
+            content: item.content,
+            importance: item.importance
+        })
+        setEditingId(item.id)
+        setView('form')
+    }
+
+    const handleDelete = async (itemId) => {
+        if (!confirm("Delete this submission?")) return
+        await supabase.from('app_feedback').delete().eq('id', itemId)
+        setItems(prev => prev.filter(i => i.id !== itemId))
+        if (activeItem?.id === itemId) {
+            setActiveItem(null)
+            setView('list')
+        }
+    }
+
+    const handlePostComment = async () => {
+        if (!newComment.trim() || !activeItem) return
+        document.activeElement.blur()
+        const { error } = await supabase.from('app_feedback_comments').insert([{
+            feedback_id: activeItem.id,
+            user_id: userId,
+            content: newComment.trim()
+        }])
+        
+        if (!error) {
+            setNewComment('')
+            fetchComments(activeItem.id)
+            // Update comment count in list
+            setItems(prev => prev.map(i => {
+                if (i.id === activeItem.id) {
+                    const current = i.comments?.[0]?.count || 0
+                    return { ...i, comments: [{ count: current + 1 }] }
+                }
+                return i
+            }))
+        }
+    }
+
+    const filteredItems = filter === 'mine' ? items.filter(i => i.user_id === userId) : items
+
+    return (
+        <div className="fixed inset-0 z-[110] flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={onClose}>
+            <motion.div 
+                initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+                className="w-full max-w-md bg-slate-900 border border-white/10 rounded-3xl shadow-2xl flex flex-col max-h-[80vh] overflow-hidden"
+                onClick={(e) => e.stopPropagation()}
+            >
+                {/* Header */}
+                <div className="flex justify-between items-center p-5 border-b border-white/5 shrink-0">
+                    {view === 'list' ? (
+                        <h2 className="text-xl font-bold">Feedback Hub</h2>
+                    ) : (
+                        <button onClick={() => { setView('list'); setActiveItem(null); setEditingId(null); setFormData({ type: 'idea', content: '', importance: 5 }) }} className="p-2 -ml-2 rounded-full text-slate-400 hover:text-white hover:bg-white/5 transition-colors">
+                            <ChevronLeft size={24} />
+                        </button>
+                    )}
+                    <button onClick={onClose} className="p-2 bg-white/5 rounded-full"><X size={20}/></button>
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 overflow-y-auto p-5">
+                    {view === 'list' && (
+                        <>
+                            <div className="flex gap-2 mb-4">
+                                <button onClick={() => setFilter('all')} className={`flex-1 py-2 rounded-lg text-sm font-bold ${filter === 'all' ? 'bg-white text-black' : 'bg-white/5 text-slate-400'}`}>All</button>
+                                <button onClick={() => setFilter('mine')} className={`flex-1 py-2 rounded-lg text-sm font-bold ${filter === 'mine' ? 'bg-white text-black' : 'bg-white/5 text-slate-400'}`}>My Posts</button>
+                            </div>
+
+                            <button 
+                                onClick={() => { setView('form'); setEditingId(null); setFormData({ type: 'idea', content: '', importance: 5 }) }}
+                                className="w-full py-3 mb-4 border border-dashed border-white/20 rounded-xl text-slate-400 hover:text-white hover:border-white/40 flex items-center justify-center gap-2 font-bold"
+                            >
+                                <Plus size={18} /> Submit New Idea
+                            </button>
+
+                            <div className="space-y-3">
+                                {loading ? <LoadingSpinner compact /> : filteredItems.length === 0 ? (
+                                    <p className="text-center text-slate-500 py-8">No feedback found.</p>
+                                ) : (
+                                    filteredItems.map(item => (
+                                        <div 
+                                            key={item.id} 
+                                            onClick={() => { setActiveItem(item); setView('detail') }}
+                                            className="bg-white/5 rounded-xl p-4 border border-white/5 hover:border-white/20 transition-colors cursor-pointer"
+                                        >
+                                            <div className="flex justify-between items-start mb-2">
+                                                <span className={`text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider ${item.type === 'idea' ? 'bg-amber-500/20 text-amber-400' : 'bg-indigo-500/20 text-indigo-400'}`}>
+                                                    {item.type === 'idea' ? '💡 Idea' : '💬 Feedback'}
+                                                </span>
+                                                {item.user_id === userId && (
+                                                    <div className="flex gap-2">
+                                                        <button onClick={(e) => { e.stopPropagation(); handleEdit(item) }} className="text-slate-500 hover:text-white"><Edit size={14} /></button>
+                                                        <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id) }} className="text-slate-500 hover:text-red-500"><Trash2 size={14} /></button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <p className="text-sm text-slate-200 mb-3 line-clamp-3">{item.content}</p>
+                                            <div className="flex items-center gap-4 text-xs text-slate-400">
+                                                <button 
+                                                    onClick={(e) => handleVote(e, item)}
+                                                    className={`flex items-center gap-1.5 px-2 py-1 rounded-full transition-colors ${myVotes.has(item.id) ? 'bg-indigo-500/20 text-indigo-400' : 'hover:bg-white/10'}`}
+                                                >
+                                                    <ThumbsUp size={14} className={myVotes.has(item.id) ? "fill-current" : ""} /> {item.votes?.[0]?.count || 0}
+                                                </button>
+                                                <div className="flex items-center gap-1.5">
+                                                    <MessageSquare size={14} /> {item.comments?.[0]?.count || 0}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </>
+                    )}
+
+                    {view === 'form' && (
+                        <div className="space-y-5">
+                            <div className="flex bg-black/30 p-1 rounded-xl">
+                                <button 
+                                    onClick={() => setFormData({...formData, type: 'idea'})}
+                                    className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition-all ${formData.type === 'idea' ? 'bg-amber-400 text-black shadow-lg' : 'text-slate-400 hover:text-white'}`}
+                                >
+                                    💡 Idea
+                                </button>
+                                <button 
+                                    onClick={() => setFormData({...formData, type: 'feedback'})}
+                                    className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition-all ${formData.type === 'feedback' ? 'bg-indigo-500 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+                                >
+                                    💬 Feedback
+                                </button>
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">
+                                    {formData.type === 'idea' ? 'What should we build?' : 'What\'s on your mind?'}
+                                </label>
+                                <textarea
+                                    value={formData.content}
+                                    onChange={(e) => setFormData({...formData, content: e.target.value})}
+                                    placeholder={formData.type === 'idea' ? "I think it would be cool if..." : "I noticed that..."}
+                                    className="w-full bg-black/30 border border-white/10 rounded-xl p-4 text-base text-white placeholder-slate-600 focus:outline-none focus:border-amber-400 min-h-[150px] resize-none"
+                                />
+                            </div>
+
+                            <div>
+                                <div className="flex justify-between items-center mb-2">
+                                    <label className="text-xs font-bold text-slate-500 uppercase">Importance</label>
+                                    <span className="text-sm font-bold text-amber-400">{formData.importance}/10</span>
+                                </div>
+                                <input 
+                                    type="range" 
+                                    min="1" max="100"
+                                    value={formData.importance * 10}
+                                    onChange={(e) => setFormData({...formData, importance: Math.round(e.target.value / 10) || 1})}
+                                    className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-400"
+                                    style={{ background: `linear-gradient(to right, #fbbf24 ${formData.importance * 10}%, #1e293b ${formData.importance * 10}%)` }}
+                                />
+                            </div>
+
+                            <button
+                                onClick={handleSubmit}
+                                disabled={submitting || !formData.content.trim()}
+                                className="w-full bg-amber-400 text-black font-black py-3.5 rounded-xl hover:bg-amber-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {submitting ? 'Saving...' : (editingId ? 'Update' : 'Submit')}
+                            </button>
+                        </div>
+                    )}
+
+                    {view === 'detail' && activeItem && (
+                        <div className="flex flex-col h-full">
+                            <div className="mb-6">
+                                <div className="flex items-center gap-2 mb-3">
+                                    <span className={`text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider ${activeItem.type === 'idea' ? 'bg-amber-500/20 text-amber-400' : 'bg-indigo-500/20 text-indigo-400'}`}>
+                                        {activeItem.type === 'idea' ? '💡 Idea' : '💬 Feedback'}
+                                    </span>
+                                    <span className="text-xs text-slate-500">• Importance: {activeItem.importance}/10</span>
+                                </div>
+                                <p className="text-base text-white leading-relaxed whitespace-pre-wrap">{activeItem.content}</p>
+                                
+                                <div className="flex items-center gap-4 mt-4 pt-4 border-t border-white/10">
+                                    <button 
+                                        onClick={(e) => handleVote(e, activeItem)}
+                                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-colors ${myVotes.has(activeItem.id) ? 'bg-indigo-500/20 text-indigo-400' : 'bg-white/5 text-slate-300 hover:bg-white/10'}`}
+                                    >
+                                        <ThumbsUp size={16} className={myVotes.has(activeItem.id) ? "fill-current" : ""} /> 
+                                        {activeItem.votes?.[0]?.count || 0}
+                                    </button>
+                                    {activeItem.user_id === userId && (
+                                        <button onClick={() => handleDelete(activeItem.id)} className="ml-auto text-xs text-red-400 hover:underline">Delete Post</button>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="flex-1 flex flex-col min-h-0">
+                                <h3 className="text-sm font-bold text-slate-400 mb-3 uppercase tracking-wider">Comments</h3>
+                                <div className="flex-1 overflow-y-auto space-y-3 mb-4 pr-2">
+                                    {commentLoading ? <LoadingSpinner compact /> : comments.length === 0 ? (
+                                        <p className="text-sm text-slate-600 italic">No comments yet.</p>
+                                    ) : (
+                                        comments.map(comment => (
+                                            <div key={comment.id} className={`p-3 rounded-xl text-sm ${comment.user_id === userId ? 'bg-indigo-500/10 border border-indigo-500/20 ml-4' : 'bg-white/5 mr-4'}`}>
+                                                {editingCommentId === comment.id ? (
+                                                    <div className="flex flex-col gap-2">
+                                                        <textarea 
+                                                            value={editCommentContent}
+                                                            onChange={(e) => setEditCommentContent(e.target.value)}
+                                                            className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-white focus:outline-none focus:border-indigo-500 resize-none"
+                                                            rows={2}
+                                                            autoFocus
+                                                        />
+                                                        <div className="flex justify-end gap-2">
+                                                            <button onClick={() => setEditingCommentId(null)} className="text-xs font-bold text-slate-500 hover:text-white px-2 py-1">Cancel</button>
+                                                            <button onClick={() => handleUpdateComment(comment.id)} className="text-xs font-bold bg-indigo-500 text-white px-3 py-1 rounded-lg hover:bg-indigo-400">Save</button>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="group">
+                                                        <p className="text-slate-200">{comment.content}</p>
+                                                        {comment.user_id === userId && (
+                                                            <button 
+                                                                onClick={() => { setEditingCommentId(comment.id); setEditCommentContent(comment.content) }}
+                                                                className="text-[10px] font-bold text-slate-500 hover:text-white mt-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                            >
+                                                                <Edit size={10} /> Edit
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                                <div className="flex gap-2 mt-auto">
+                                    <input 
+                                        placeholder="Add a comment..." 
+                                        value={newComment}
+                                        onChange={(e) => setNewComment(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && handlePostComment()}
+                                        className="flex-1 bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-base focus:border-indigo-500 outline-none"
+                                    />
+                                    <button 
+                                        onClick={handlePostComment}
+                                        disabled={!newComment.trim()}
+                                        className="bg-indigo-500 text-white p-3 rounded-xl disabled:opacity-50 hover:bg-indigo-600"
+                                    >
+                                        <CornerDownRight size={20} />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </motion.div>
         </div>
     )
 }

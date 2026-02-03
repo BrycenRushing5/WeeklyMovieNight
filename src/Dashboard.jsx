@@ -205,23 +205,37 @@ const Dashboard = ({ session }) => {
         return
     }
     setCreatingEvent(true)
-    const { error } = await supabase.from("events").insert([{
+    const { data: newEvent, error } = await supabase.from("events").insert([{
         title: newEventTitle,
         event_date: newEventDate || null,
         location_address: newEventLocation || null,
         group_id: selectedCrewId || null,
         created_by: userId,
         status: 'voting'
-    }])
+    }]).select().single()
     
-    setCreatingEvent(false)
-    if (!error) {
+    if (!error && newEvent) {
+        // Add creator as attendee
+        let attendeesToAdd = [{ event_id: newEvent.id, user_id: userId }]
+
+        // If crew selected, add crew members
+        if (selectedCrewId) {
+            const { data: crewMembers } = await supabase.from('group_members').select('user_id').eq('group_id', selectedCrewId)
+            if (crewMembers) {
+                const crewAttendees = crewMembers.filter(m => m.user_id !== userId).map(m => ({ event_id: newEvent.id, user_id: m.user_id }))
+                attendeesToAdd = [...attendeesToAdd, ...crewAttendees]
+            }
+        }
+
+        await supabase.from('event_attendees').insert(attendeesToAdd)
+
         setShowCreateEvent(false)
         setNewEventTitle("")
         setNewEventDate("")
         setNewEventLocation("")
         loadEvents()
     }
+    setCreatingEvent(false)
   }
 
   const handleCreateCrew = async () => {

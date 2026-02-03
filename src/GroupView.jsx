@@ -84,7 +84,21 @@ export default function GroupView({ session }) {
       .select()
       .single()
     
-    if (!error) {
+    if (!error && createdEvent) {
+      // Add all group members as attendees
+      const { data: groupMembers } = await supabase.from('group_members').select('user_id').eq('group_id', groupId)
+      
+      const attendees = (groupMembers || []).map(m => ({
+          event_id: createdEvent.id,
+          user_id: m.user_id
+      }))
+
+      // Ensure creator is added (just in case)
+      if (!attendees.some(a => a.user_id === session.user.id)) {
+          attendees.push({ event_id: createdEvent.id, user_id: session.user.id })
+      }
+      if (attendees.length > 0) await supabase.from('event_attendees').insert(attendees)
+
       setNewEventTitle('')
       setNewEventDate('')
       setNewEventLocation('')

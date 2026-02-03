@@ -10,7 +10,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@react-spring/web": "^10.0.3",
     "@supabase/supabase-js": "^2.89.0",
     "clsx": "^2.1.1",
     "framer-motion": "^12.23.26",
@@ -18,7 +17,6 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.11.0",
-    "react-tinder-card": "^1.6.4",
     "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {

@@ -38,7 +38,10 @@ export default function JoinGroup({ session }) {
       if (joinError) {
         // If error is code 23505, it means they are already in the group (UNIQUE constraint)
         if (joinError.code === '23505') {
-          if (eventId) return navigate(`/room/${eventId}`)
+          if (eventId) {
+            await supabase.from('event_attendees').upsert([{ event_id: eventId, user_id: session.user.id }], { onConflict: 'event_id, user_id' })
+            return navigate(`/room/${eventId}`)
+          }
           alert(`You are already in ${group.name}!`)
           navigate(`/group/${group.id}`)
           return
@@ -50,6 +53,7 @@ export default function JoinGroup({ session }) {
     }
 
     if (eventId) {
+      await supabase.from('event_attendees').upsert([{ event_id: eventId, user_id: session.user.id }], { onConflict: 'event_id, user_id' })
       navigate(`/room/${eventId}`)
       return
     }

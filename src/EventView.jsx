@@ -196,7 +196,7 @@ export default function EventView() {
   }
 
   const inviteLink = code 
-    ? (groupShareCode ? `${window.location.origin}/join/${groupShareCode}?eventId=${code}` : `${window.location.origin}/room/${code}`)
+    ? (groupShareCode ? `${window.location.origin}/join/${groupShareCode}?eventId=${code}&addToGroup=0` : `${window.location.origin}/room/${code}`)
     : ''
 
   const handleSaveEdit = async () => {

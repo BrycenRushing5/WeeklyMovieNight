@@ -1,5 +1,4 @@
 import { motion } from 'framer-motion'
-import { POSTER_BASE_URL } from './tmdbClient'
 import { clsx } from 'clsx'
 
 export default function MovieCard({ movie, children, meta, topRight }) {
@@ -12,8 +11,6 @@ export default function MovieCard({ movie, children, meta, topRight }) {
   const genres = hasGenres ? genreList.join(', ') : ''
   const description = movie.description?.trim() || ''
   
-  const posterUrl = movie.poster_path ? `${POSTER_BASE_URL}${movie.poster_path}` : null
-
   // Color code the score
   const scoreColor = movie.rt_score >= 80 ? 'text-green-400 border-green-400' : movie.rt_score >= 60 ? 'text-yellow-400 border-yellow-400' : 'text-slate-400 border-slate-400'
 

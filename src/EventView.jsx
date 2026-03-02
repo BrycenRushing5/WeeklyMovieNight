@@ -6,7 +6,10 @@ import { Calendar, MapPin, MoreHorizontal, PlayCircle, Plus, ThumbsUp, Film, Use
 import DateTimePickerSheet from './DateTimePickerSheet'
 import LoadingSpinner from './LoadingSpinner'
 import RateMovie from './RateMovie'
-import { POSTER_BASE_URL } from './tmdbClient'
+import PeoplePickerSheet from './PeoplePickerSheet'
+import PersonAvatar from './PersonAvatar'
+import { loadGroupPeople, loadRecentPeople } from './peopleSearch'
+import MoviePoster from './MoviePoster'
 
 export default function EventView() {
   const { code } = useParams()
@@ -94,12 +97,15 @@ export default function EventView() {
       setAttendeesLoading(true)
       const { data: attendeeData } = await supabase
         .from('event_attendees')
-        .select('user_id, profiles(display_name, username)')
+        .select('user_id, profiles(*)')
         .eq('event_id', code)
       if (active) {
         const list = (attendeeData || []).map((row) => ({
           id: row.user_id,
           name: row.profiles?.display_name || row.profiles?.username || 'Movie Fan',
+          username: row.profiles?.username || '',
+          avatarKey: row.profiles?.avatar_key || '',
+          avatarUrl: row.profiles?.avatar_url || '',
         }))
         setAttendees(list)
         setAttendeesLoading(false)
@@ -273,6 +279,10 @@ export default function EventView() {
 
   const handleDeleteEvent = async () => {
     if (!code) return
+    if (event?.created_by !== userId) {
+      alert('Only the creator can delete this event.')
+      return
+    }
     setIsDeleting(true)
     
     // Manually delete dependencies to avoid FK constraints
@@ -295,7 +305,7 @@ export default function EventView() {
     if (!userId || !code) return
     
     if (event?.created_by === userId) {
-        await handleDeleteEvent()
+        alert('Use Delete Event from the menu if you want to remove this event.')
         return
     }
 
@@ -346,6 +356,20 @@ export default function EventView() {
     setLoadingSharedEvents(false)
   }
 
+  const handleAudienceAdded = (person) => {
+    setAttendees(prev => {
+      if (prev.some(attendee => attendee.id === person.id)) return prev
+
+      return [...prev, {
+        id: person.id,
+        name: person.name,
+        username: person.username || '',
+        avatarKey: person.avatar_key || person.avatarKey || '',
+        avatarUrl: person.avatar_url || person.avatarUrl || '',
+      }].sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: 'base' }))
+    })
+  }
+
   const handleRateModalClose = async () => {
     setShowRateModal(false)
     if (userId && winningMovie) {
@@ -359,6 +383,10 @@ export default function EventView() {
     }
   }
 
+  const handleReviewSaved = (review) => {
+    setUserReview(review)
+  }
+
   const handleUnselectMovie = async () => {
     const { error } = await supabase
         .from('events')
@@ -370,13 +398,6 @@ export default function EventView() {
     } else {
         window.location.reload()
     }
-  }
-
-  const initialsFor = (name) => {
-    if (!name) return '?'
-    const parts = name.trim().split(' ').filter(Boolean)
-    const initials = parts.slice(0, 2).map((part) => part[0].toUpperCase())
-    return initials.join('') || '?'
   }
 
   const nominateStatus = myNominationsCount > 0
@@ -406,7 +427,7 @@ export default function EventView() {
           <button
             type="button"
             onClick={() => navigate('/')}
-            className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+            className="p-2 rounded-full bg-white/10 transition-colors"
           >
             <ChevronLeft size={20} />
           </button>
@@ -431,22 +452,25 @@ export default function EventView() {
                 >
                     <button
                     onClick={() => { setIsEditing(true); setShowMoreMenu(false) }}
-                    className="text-left px-4 py-3 hover:bg-white/5 flex items-center gap-2 text-sm font-semibold"
+                    className="text-left px-4 py-3 flex items-center gap-2 text-sm font-semibold"
                     >
                     <Edit size={16} /> Edit Event
                     </button>
-                    <button
-                    onClick={() => { setShowLeaveConfirm(true); setShowMoreMenu(false) }}
-                    className="text-left px-4 py-3 hover:bg-white/5 flex items-center gap-2 text-sm font-semibold"
-                    >
-                    <LogOut size={16} /> Leave Event
-                    </button>
-                    <button
-                    onClick={() => { setShowDeleteConfirm(true); setShowMoreMenu(false) }}
-                    className="text-left px-4 py-3 hover:bg-rose-500/10 text-rose-500 flex items-center gap-2 text-sm font-semibold"
-                    >
-                    <Trash2 size={16} /> Delete Event
-                    </button>
+                    {event?.created_by === userId ? (
+                      <button
+                      onClick={() => { setShowDeleteConfirm(true); setShowMoreMenu(false) }}
+                      className="text-left px-4 py-3 text-rose-500 flex items-center gap-2 text-sm font-semibold"
+                      >
+                      <Trash2 size={16} /> Delete Event
+                      </button>
+                    ) : (
+                      <button
+                      onClick={() => { setShowLeaveConfirm(true); setShowMoreMenu(false) }}
+                      className="text-left px-4 py-3 flex items-center gap-2 text-sm font-semibold"
+                      >
+                      <LogOut size={16} /> Leave Event
+                      </button>
+                    )}
                 </motion.div>
                 </>
                 )}
@@ -483,14 +507,14 @@ export default function EventView() {
                   <button
                     type="button"
                     onClick={handleSaveEdit}
-                    className="flex-1 bg-rose-500 text-white px-4 py-2 rounded-lg hover:bg-rose-600 font-bold"
+                    className="flex-1 bg-rose-500 text-white px-4 py-2 rounded-lg font-bold"
                   >
                     Save
                   </button>
                   <button
                     type="button"
                     onClick={handleCancelEdit}
-                    className="flex-1 bg-white/10 text-white px-4 py-2 rounded-lg hover:bg-white/20"
+                    className="flex-1 bg-white/10 text-white px-4 py-2 rounded-lg"
                   >
                     Cancel
                   </button>
@@ -515,7 +539,7 @@ export default function EventView() {
                       role="button"
                     >
                       <MapPin size={16} className="text-rose-500" />
-                      <span className="text-blue-400 underline decoration-blue-400/30 underline-offset-4 hover:text-blue-300 transition-colors">{event.location_address}</span>
+                      <span className="text-blue-400 underline decoration-blue-400/30 underline-offset-4 transition-colors">{event.location_address}</span>
                     </div>
                   )}
                 </div>
@@ -533,7 +557,14 @@ export default function EventView() {
             >
                 {/* Background Image with Blur */}
                 <div className="absolute inset-0">
-                    {winningMovie.poster_path && <img src={`${POSTER_BASE_URL}${winningMovie.poster_path}`} className="w-full h-full object-cover opacity-20 blur-xl" alt="" />}
+                    <MoviePoster
+                      title={winningMovie.title}
+                      posterPath={winningMovie.poster_path}
+                      className="w-full h-full"
+                      imageClassName="w-full h-full object-cover opacity-20 blur-xl scale-110"
+                      iconSize={32}
+                      showTitle={false}
+                    />
                     <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-900/80 to-slate-900/60" />
                 </div>
                 
@@ -543,12 +574,15 @@ export default function EventView() {
                             <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-widest mb-1">
                                 <Trophy size={14} /> Tonight's Feature
                             </div>
-                            <h2 className="text-2xl font-black leading-tight text-white truncate">{winningMovie.title}</h2>
+                            <h2 className="text-2xl font-black leading-tight text-white break-words whitespace-normal">{winningMovie.title}</h2>
                             <div className="text-slate-400 text-sm mt-1">{winningMovie.year}</div>
                         </div>
-                        <div className="w-16 aspect-[2/3] rounded-lg overflow-hidden shadow-lg border border-white/10 shrink-0 bg-slate-800">
-                            {winningMovie.poster_path && <img src={`${POSTER_BASE_URL}${winningMovie.poster_path}`} className="w-full h-full object-cover" alt={winningMovie.title} />}
-                        </div>
+                        <MoviePoster
+                          title={winningMovie.title}
+                          posterPath={winningMovie.poster_path}
+                          className="w-16 aspect-[2/3] rounded-lg shadow-lg border border-white/10 shrink-0"
+                          iconSize={16}
+                        />
                     </div>
 
                     <div 
@@ -567,7 +601,7 @@ export default function EventView() {
                         </div>
                         <button 
                             onClick={() => setShowRateModal(true)}
-                            className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors whitespace-nowrap ${userReview ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-amber-400 hover:bg-amber-300 text-black'}`}
+                            className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors whitespace-nowrap ${userReview ? 'bg-white/10 text-white' : 'bg-amber-400 text-black'}`}
                         >
                             {userReview ? 'Edit' : 'Rate Movie'}
                         </button>
@@ -582,7 +616,7 @@ export default function EventView() {
           <button
             type="button"
             onClick={() => navigate(`/room/${code}/nominate`)}
-            className="text-left rounded-3xl border border-rose-500 bg-gradient-to-br from-rose-600/40 via-rose-600/20 to-transparent p-5 hover:from-rose-600/50"
+            className="text-left rounded-3xl border border-rose-500 bg-gradient-to-br from-rose-600/40 via-rose-600/20 to-transparent p-5"
           >
             <div className="flex items-center gap-3 w-full">
               <Film size={22} className="text-rose-300" />
@@ -597,7 +631,7 @@ export default function EventView() {
           <button
             type="button"
             onClick={() => navigate(`/room/${code}/vote`)}
-            className="text-left rounded-3xl border border-indigo-500 bg-gradient-to-br from-indigo-600/40 via-indigo-600/20 to-transparent p-5 hover:from-indigo-600/50"
+            className="text-left rounded-3xl border border-indigo-500 bg-gradient-to-br from-indigo-600/40 via-indigo-600/20 to-transparent p-5"
           >
             <div className="flex items-center gap-3 w-full">
               <ThumbsUp size={22} className="text-indigo-300" />
@@ -612,7 +646,7 @@ export default function EventView() {
           <button
             type="button"
             onClick={() => navigate(`/room/${code}/reveal`)}
-            className="text-left rounded-3xl border border-amber-400 bg-gradient-to-br from-amber-500/40 via-amber-500/20 to-transparent p-5 hover:from-amber-500/50"
+            className="text-left rounded-3xl border border-amber-400 bg-gradient-to-br from-amber-500/40 via-amber-500/20 to-transparent p-5"
           >
             <div className="flex items-center gap-3 w-full">
               <PlayCircle size={22} className="text-amber-300" />
@@ -629,40 +663,52 @@ export default function EventView() {
       <div className="px-4 mt-4"> {/* Adjusted mt-6 to mt-8 */}
         <div className="">
           <div className="flex items-center justify-between mb-3">
-            <div className="text-sm uppercase tracking-wide text-slate-400">The Audience</div>
-            <div className="flex items-center gap-2 text-xs text-slate-400">
-              <Users size={14} />
-              {attendeesLoading ? '...' : attendees.length}
+            <div>
+              <div className="text-sm uppercase tracking-wide text-slate-400">The Audience</div>
+              <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
+                <Users size={14} />
+                {attendeesLoading ? 'Loading...' : `${attendees.length} ${attendees.length === 1 ? 'person' : 'people'}`}
+              </div>
             </div>
-          </div>
-          <div className="relative">
-          <div className="flex gap-3 overflow-x-auto pb-2 pr-12 scrollbar-hide">
             <button
               type="button"
               onClick={() => setShowAddAudience(true)}
-              className="shrink-0 w-12 h-12 rounded-full border border-dashed border-white/30 flex items-center justify-center text-white/80 hover:bg-white/10"
-              title="Add audience"
+              className="inline-flex items-center gap-2 rounded-full bg-indigo-500/15 px-3 py-2 text-[11px] font-black uppercase tracking-[0.18em] text-indigo-300 ring-1 ring-indigo-500/30"
             >
-              <Plus size={18} />
+              <Plus size={14} />
+              Add People
             </button>
+          </div>
+          <div className="relative">
+          <div className="flex gap-3 overflow-x-auto pb-2 pr-12 scrollbar-hide">
             {attendeesLoading ? (
               <div className="text-sm text-slate-400">Loading attendees...</div>
             ) : attendees.length === 0 ? (
-              <div className="text-sm text-slate-400">No attendees yet.</div>
+              <div className="rounded-2xl border border-dashed border-white/10 px-4 py-6 text-sm text-slate-400">
+                No attendees yet. Use search, your crew, or recent people to build the room faster.
+              </div>
             ) : (
               attendees.map((person) => (
                 <button 
                   key={person.id} 
                   onClick={() => handleAttendeeClick(person)}
-                  className="shrink-0 w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold hover:bg-slate-700 transition-colors"
+                  className="flex w-16 shrink-0 flex-col items-center gap-2 text-center"
                 >
-                  {initialsFor(person.name)}
+                  <PersonAvatar
+                    name={person.name}
+                    avatarKey={person.avatarKey}
+                    avatarUrl={person.avatarUrl}
+                    size={48}
+                    className="shadow-lg"
+                    initialsClassName="text-xs"
+                  />
+                  <span className="w-full truncate text-[11px] font-bold text-slate-300">{person.name}</span>
                 </button>
               ))
             )}
           </div>
-          {attendees.length > 5 && (
-            <div className="pointer-events-none absolute right-0 top-0 bottom-2 w-16 bg-gradient-to-l from-black to-transparent" />
+          {attendees.length > 4 && (
+            <div className="pointer-events-none absolute right-0 top-0 bottom-2 w-16 bg-gradient-to-l from-slate-950 to-transparent" />
           )}
           </div>
         </div>
@@ -699,30 +745,12 @@ export default function EventView() {
       </div>
 
       {showAddAudience && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 backdrop-blur-sm">
-          <div className="w-full max-w-lg bg-slate-900 border-t border-white/10 rounded-t-3xl p-5">
-            <div className="flex items-center justify-between mb-3">
-              <div className="text-lg font-bold">Add Audience</div>
-              <button
-                type="button"
-                onClick={() => setShowAddAudience(false)}
-                className="text-sm text-slate-300"
-              >
-                Close
-              </button>
-            </div>
-            <form onSubmit={(e) => { e.preventDefault(); document.activeElement.blur() }}>
-                <input
-                enterKeyHint="search"
-                placeholder="Search users by name or handle"
-                className="w-full bg-black/30 border border-white/10 text-white p-3 rounded-lg text-base"
-                />
-            </form>
-            <div className="mt-4 text-sm text-slate-400">
-              Recent crew and search results will appear here.
-            </div>
-          </div>
-        </div>
+        <AddAudienceSheet
+          event={event}
+          attendees={attendees}
+          onAdded={handleAudienceAdded}
+          onClose={() => setShowAddAudience(false)}
+        />
       )}
 
       {showDeleteConfirm && (
@@ -738,14 +766,14 @@ export default function EventView() {
             <div className="flex gap-3">
               <button
                 onClick={() => setShowDeleteConfirm(false)}
-                className="flex-1 bg-white/10 py-3 rounded-xl font-semibold hover:bg-white/20"
+                className="flex-1 bg-white/10 py-3 rounded-xl font-semibold"
               >
                 Cancel
               </button>
               <button
                 onClick={handleDeleteEvent}
                 disabled={isDeleting}
-                className="flex-1 bg-rose-500 text-white py-3 rounded-xl font-semibold hover:bg-rose-600 disabled:opacity-50"
+                className="flex-1 bg-rose-500 text-white py-3 rounded-xl font-semibold disabled:opacity-50"
               >
                 {isDeleting ? 'Deleting...' : 'Delete'}
               </button>
@@ -770,14 +798,14 @@ export default function EventView() {
             <div className="flex gap-3">
               <button
                 onClick={() => setShowLeaveConfirm(false)}
-                className="flex-1 bg-white/10 py-3 rounded-xl font-semibold hover:bg-white/20"
+                className="flex-1 bg-white/10 py-3 rounded-xl font-semibold"
               >
                 Cancel
               </button>
               <button
                 onClick={handleLeaveEvent}
                 disabled={isLeaving}
-                className="flex-1 bg-rose-500 text-white py-3 rounded-xl font-semibold hover:bg-rose-600 disabled:opacity-50"
+                className="flex-1 bg-rose-500 text-white py-3 rounded-xl font-semibold disabled:opacity-50"
               >
                 {isLeaving || isDeleting ? (event?.created_by === userId ? 'Deleting...' : 'Leaving...') : (event?.created_by === userId ? 'Delete' : 'Leave')}
               </button>
@@ -790,9 +818,9 @@ export default function EventView() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={() => setShowMapOptions(false)}>
           <div className="bg-slate-900 border border-white/10 rounded-2xl p-4 w-full max-w-xs flex flex-col gap-3" onClick={e => e.stopPropagation()}>
             <div className="text-lg font-bold text-center mb-1 text-white">Open Maps</div>
-            <button onClick={() => openMaps('apple')} className="bg-white/10 text-white p-3 rounded-xl font-semibold hover:bg-white/20">Apple Maps</button>
-            <button onClick={() => openMaps('google')} className="bg-white/10 text-white p-3 rounded-xl font-semibold hover:bg-white/20">Google Maps</button>
-            <button onClick={() => setShowMapOptions(false)} className="p-2 text-slate-400 text-sm hover:text-white">Cancel</button>
+            <button onClick={() => openMaps('apple')} className="bg-white/10 text-white p-3 rounded-xl font-semibold">Apple Maps</button>
+            <button onClick={() => openMaps('google')} className="bg-white/10 text-white p-3 rounded-xl font-semibold">Google Maps</button>
+            <button onClick={() => setShowMapOptions(false)} className="p-2 text-slate-400 text-sm">Cancel</button>
           </div>
         </div>
       )}
@@ -802,14 +830,19 @@ export default function EventView() {
           <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 w-full max-w-xs flex flex-col items-center gap-4 relative" onClick={e => e.stopPropagation()}>
             <button 
               onClick={() => setSelectedAttendee(null)}
-              className="absolute top-3 right-3 text-slate-400 hover:text-white"
+              className="absolute top-3 right-3 text-slate-400"
             >
               <X size={20} />
             </button>
             
-            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-2xl font-bold shadow-lg">
-              {initialsFor(selectedAttendee.name)}
-            </div>
+            <PersonAvatar
+              name={selectedAttendee.name}
+              avatarKey={selectedAttendee.avatarKey}
+              avatarUrl={selectedAttendee.avatarUrl}
+              size={80}
+              className="shadow-lg"
+              initialsClassName="text-2xl"
+            />
             
             <div className="text-center">
               <h3 className="text-xl font-bold">{selectedAttendee.name}</h3>
@@ -839,7 +872,9 @@ export default function EventView() {
         <RateMovie 
             eventId={code}
             movie={winningMovie}
+            existingReview={userReview}
             onClose={handleRateModalClose}
+            onSaved={handleReviewSaved}
         />
       )}
 
@@ -855,17 +890,93 @@ export default function EventView() {
   )
 }
 
-function FeatureDetailModal({ movie, onClose, onUnselect, canUnselect }) {
-    const posterUrl = movie.poster_path ? `${POSTER_BASE_URL}${movie.poster_path}` : null
+function AddAudienceSheet({ event, attendees, onAdded, onClose }) {
+  const [crewPeople, setCrewPeople] = useState([])
+  const [recentPeople, setRecentPeople] = useState([])
+  const [currentUserId, setCurrentUserId] = useState('')
 
+  useEffect(() => {
+    let active = true
+
+    async function loadSuggestions() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (active) {
+        setCurrentUserId(user?.id || '')
+      }
+      const excludeIds = [...attendees.map(person => person.id), user?.id].filter(Boolean)
+
+      const [crewList, recentList] = await Promise.all([
+        event?.group_id ? loadGroupPeople(event.group_id, { excludeIds, limit: 20 }) : Promise.resolve([]),
+        loadRecentPeople(user?.id, { excludeIds, limit: 12 }),
+      ])
+
+      if (!active) return
+
+      setCrewPeople(crewList)
+      setRecentPeople(recentList)
+    }
+
+    loadSuggestions()
+    return () => {
+      active = false
+    }
+  }, [event?.group_id, attendees])
+
+  const handleAddAudience = async (person) => {
+    const { error } = await supabase
+      .from('event_attendees')
+      .upsert([{ event_id: event.id, user_id: person.id }], { onConflict: 'event_id, user_id' })
+
+    if (error) {
+      throw new Error(error.message || 'Could not add that person to this event.')
+    }
+
+    onAdded(person)
+  }
+
+  const sections = [
+    {
+      id: 'crew',
+      title: 'From This Crew',
+      description: 'Quick add people who are already part of this crew.',
+      items: crewPeople,
+    },
+    {
+      id: 'recent',
+      title: 'Recent People',
+      description: 'People you have already shared movie nights with.',
+      items: recentPeople,
+    },
+  ]
+
+  return (
+    <PeoplePickerSheet
+      title="Add People To This Event"
+      subtitle="Search the app, pull from this crew, or invite recent movie people in a couple taps."
+      placeholder="Search users by name or handle"
+      searchEmptyText="No users matched that search."
+      browseEmptyText="Search by name or username, or use the suggestions above."
+      excludeIds={[...attendees.map(person => person.id), currentUserId].filter(Boolean)}
+      sections={sections}
+      onAdd={handleAddAudience}
+      onClose={onClose}
+    />
+  )
+}
+
+function FeatureDetailModal({ movie, onClose, onUnselect, canUnselect }) {
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-200" onClick={onClose}>
             <div className="w-full max-w-lg max-h-[85vh] bg-slate-900 rounded-3xl overflow-hidden shadow-2xl border border-white/10 flex flex-col" onClick={e => e.stopPropagation()}>
                 <div className="flex-1 overflow-y-auto p-6">
                     <div className="flex gap-4 mb-6">
-                        <div className="w-28 shrink-0 aspect-[2/3] rounded-xl overflow-hidden bg-slate-800 shadow-lg">
-                            {posterUrl ? <img src={posterUrl} className="w-full h-full object-cover" alt={movie.title} /> : <div className="w-full h-full bg-slate-800" />}
-                        </div>
+                        <MoviePoster
+                            title={movie.title}
+                            posterPath={movie.poster_path}
+                            className="w-28 shrink-0 aspect-[2/3] rounded-xl shadow-lg"
+                            iconSize={24}
+                            showTitle
+                        />
                         <div>
                             <div className="text-amber-400 font-bold text-xs uppercase tracking-widest mb-2 flex items-center gap-1"><Trophy size={12}/> Selected Movie</div>
                             <h2 className="text-2xl font-black leading-tight mb-1 text-white">{movie.title}</h2>
@@ -879,11 +990,11 @@ function FeatureDetailModal({ movie, onClose, onUnselect, canUnselect }) {
                 </div>
                 <div className="p-4 border-t border-white/10 flex flex-col gap-3">
                     {canUnselect && (
-                        <button onClick={onUnselect} className="w-full py-3 bg-red-500/10 text-red-500 font-bold rounded-xl hover:bg-red-500/20 transition-colors">
+                        <button onClick={onUnselect} className="w-full py-3 bg-red-500/10 text-red-500 font-bold rounded-xl transition-colors">
                             Unselect Movie
                         </button>
                     )}
-                    <button onClick={onClose} className="w-full py-3 bg-slate-800 text-white font-bold rounded-xl hover:bg-slate-700 transition-colors">
+                    <button onClick={onClose} className="w-full py-3 bg-slate-800 text-white font-bold rounded-xl transition-colors">
                         Close
                     </button>
                 </div>

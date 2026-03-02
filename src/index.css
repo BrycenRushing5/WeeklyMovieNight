@@ -42,10 +42,6 @@ body {
   background-clip: content-box;
 }
 
-*::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 229, 255, 0.45);
-}
-
 #root {
   height: 100%;
   box-sizing: border-box;

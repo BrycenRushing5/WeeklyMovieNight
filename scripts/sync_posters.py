@@ -19,6 +19,7 @@ import requests
 from urllib.parse import quote
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+import re
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
@@ -122,6 +123,27 @@ def tmdb_search(title, year=None):
     return results[0] if results else None
 
 
+def normalize_title(value):
+    return re.sub(r"[^a-z0-9]", "", (value or "").lower())
+
+
+def is_safe_tmdb_match(movie_title, movie_year, tmdb_result):
+    if not tmdb_result:
+        return False
+
+    tmdb_title = tmdb_result.get("title") or ""
+    if normalize_title(movie_title) != normalize_title(tmdb_title):
+        return False
+
+    if movie_year:
+        release_date = tmdb_result.get("release_date") or ""
+        tmdb_year = release_date[:4] if release_date else None
+        if tmdb_year and str(movie_year) != str(tmdb_year):
+            return False
+
+    return True
+
+
 def update_movie(movie_id, poster_path, tmdb_id=None):
     payload = {"poster_path": poster_path}
     if tmdb_id:
@@ -170,7 +192,7 @@ def main():
                     tmdb_lookup_id = tmdb_id
             elif title:
                 result = tmdb_search(title, year)
-                if result:
+                if result and is_safe_tmdb_match(title, year, result):
                     poster_path = result.get("poster_path")
                     tmdb_lookup_id = result.get("id")
 

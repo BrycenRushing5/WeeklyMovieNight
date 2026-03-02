@@ -4,10 +4,10 @@ import { supabase } from './supabaseClient'
 import { motion, useMotionValue, useTransform, AnimatePresence, animate } from 'framer-motion'
 import { 
   Layers, LayoutGrid, ThumbsUp, ThumbsDown, Heart, Undo2, 
-  X, Film, Ticket, Clapperboard, ChevronLeft, Star, Check, Info, Clock
+  X, Ticket, ChevronLeft, Star, Check, Info, Clock
 } from 'lucide-react'
-import { POSTER_BASE_URL } from './tmdbClient'
 import LoadingSpinner from './LoadingSpinner'
+import MoviePoster from './MoviePoster'
 
 export default function VoteView() {
   const { code } = useParams()
@@ -25,6 +25,7 @@ export default function VoteView() {
   
   // Grid State
   const [selectedNomination, setSelectedNomination] = useState(null)
+  const [stackDescriptionMovie, setStackDescriptionMovie] = useState(null)
 
   useEffect(() => {
     loadData()
@@ -138,7 +139,7 @@ export default function VoteView() {
       {/* HEADER */}
       <div className="px-4 py-4 flex items-center justify-between z-20">
         <div className="flex items-center gap-3">
-            <button onClick={() => navigate(`/room/${code}`)} className="p-2 rounded-full bg-white/10 hover:bg-white/20">
+            <button onClick={() => navigate(`/room/${code}`)} className="p-2 rounded-full bg-white/10">
                 <ChevronLeft size={20} />
             </button>
             <h1 className="text-2xl font-black tracking-tighter text-indigo-500">
@@ -172,6 +173,7 @@ export default function VoteView() {
                 onUndo={handleUndo}
                 canUndo={history.length > 0}
                 onDone={() => navigate(`/room/${code}`)}
+                onReadMore={(movie) => setStackDescriptionMovie(movie)}
             />
         ) : (
             <GridView 
@@ -183,6 +185,12 @@ export default function VoteView() {
 
         {/* Expanded Card Modal */}
         <AnimatePresence>
+            {stackDescriptionMovie && (
+                <DescriptionModal
+                    movie={stackDescriptionMovie}
+                    onClose={() => setStackDescriptionMovie(null)}
+                />
+            )}
             {selectedNomination && (
                 <ExpandedCard 
                     nom={selectedNomination} 
@@ -197,7 +205,7 @@ export default function VoteView() {
   )
 }
 
-function StackView({ queue, onVote, onSkip, onUndo, canUndo, onDone, exitDirection }) {
+function StackView({ queue, onVote, onSkip, onUndo, canUndo, onDone, exitDirection, onReadMore }) {
     const activeItem = queue[0]
     const nextItems = queue.slice(1, 3) // Show next 2 cards (Total 3 visible)
 
@@ -209,11 +217,11 @@ function StackView({ queue, onVote, onSkip, onUndo, canUndo, onDone, exitDirecti
                     <div className="text-2xl font-bold text-slate-200">All Voted!</div>
                     <p className="text-slate-400">Waiting for more nominations...</p>
                     {canUndo && (
-                        <button onClick={onUndo} className="mt-4 px-6 py-3 bg-white/10 rounded-xl font-bold flex items-center gap-2 hover:bg-white/20">
+                        <button onClick={onUndo} className="mt-4 px-6 py-3 bg-white/10 rounded-xl font-bold flex items-center gap-2">
                             <Undo2 size={18} /> Undo Last Vote
                         </button>
                     )}
-                    <button onClick={onDone} className="mt-4 px-8 py-3 bg-indigo-500 text-white rounded-xl font-bold shadow-lg hover:bg-indigo-400 transition-colors">
+                    <button onClick={onDone} className="mt-4 px-8 py-3 bg-indigo-500 text-white rounded-xl font-bold shadow-lg transition-colors">
                         Done Voting
                     </button>
                 </div>
@@ -249,7 +257,13 @@ function StackView({ queue, onVote, onSkip, onUndo, canUndo, onDone, exitDirecti
                 {/* Active Card (Draggable) */}
                 <AnimatePresence custom={exitDirection}>
                     {activeItem && (
-                        <DraggableCard key={activeItem.id} item={activeItem} onVote={onVote} onSkip={onSkip} />
+                        <DraggableCard
+                            key={activeItem.id}
+                            item={activeItem}
+                            onVote={onVote}
+                            onSkip={onSkip}
+                            onReadMore={onReadMore}
+                        />
                     )}
                 </AnimatePresence>
             </div>
@@ -265,22 +279,26 @@ function StackView({ queue, onVote, onSkip, onUndo, canUndo, onDone, exitDirecti
 }
 
 function ActionButton({ icon: Icon, color, borderColor, onClick, fill = false, disabled = false }) {
+    const shouldFill = fill || Icon === ThumbsUp || Icon === ThumbsDown
+
     return (
         <button 
             onClick={onClick}
             disabled={disabled}
-            className={`w-14 h-14 rounded-full bg-slate-900 border-2 ${borderColor} ${color} flex items-center justify-center shadow-lg transition-transform ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:scale-110 active:scale-95'}`}
+            className={`w-14 h-14 rounded-full bg-slate-900 border-2 ${borderColor} ${color} flex items-center justify-center shadow-lg transition-transform ${disabled ? 'opacity-50 cursor-not-allowed' : 'active:scale-95'}`}
         >
-            <Icon size={24} fill={fill ? "currentColor" : "none"} className="opacity-80" />
+            <Icon size={24} fill={shouldFill ? "currentColor" : "none"} className="opacity-80" />
         </button>
     )
 }
 
-function DraggableCard({ item, onVote, onSkip }) {
+function DraggableCard({ item, onVote, onSkip, onReadMore }) {
     const [isFlipped, setIsFlipped] = useState(false)
     const x = useMotionValue(0)
     const y = useMotionValue(0)
     const isDragging = useRef(false)
+    const description = item?.movie?.description?.trim() || ''
+    const hasLongDescription = description.length > 220
     
     // Smoother rotation (less wobble)
     const rotate = useTransform(x, [-200, 200], [-10, 10])
@@ -336,7 +354,7 @@ function DraggableCard({ item, onVote, onSkip }) {
             dragMomentum={false}
             onDragStart={() => { isDragging.current = true }}
             onDragEnd={handleDragEnd}
-            onClick={() => !isDragging.current && setIsFlipped(!isFlipped)}
+            onClick={() => !isDragging.current && setIsFlipped(prev => !prev)}
             className="absolute w-[90%] max-w-[340px] aspect-[2/3] max-h-[55vh] cursor-grab active:cursor-grabbing perspective-1000 touch-none select-none"
         >
             <motion.div style={{ opacity: opacityLike }} className="absolute top-10 left-10 z-50 border-4 border-blue-400 text-blue-400 rounded-lg px-4 py-2 text-4xl font-black uppercase -rotate-12 tracking-widest bg-black/60 backdrop-blur-md shadow-2xl pointer-events-none">LIKE</motion.div>
@@ -346,14 +364,14 @@ function DraggableCard({ item, onVote, onSkip }) {
 
             {/* Card Content */}
             <div className="w-full h-full relative bg-slate-900 rounded-3xl overflow-hidden shadow-2xl border border-white/10">
-                {/* Back Layer (Info) - Always rendered behind */}
-                <div className="absolute inset-0 p-6 flex flex-col bg-slate-900 z-0">
-                    <div className="flex-1 overflow-y-auto">
+                {/* Back Layer (Info) */}
+                <div className="absolute inset-0 overflow-hidden bg-slate-900 p-6">
+                    <div className="flex h-full flex-col min-h-0">
                         <div className="flex gap-4 mb-4">
                             <div className="w-24 shrink-0 aspect-[2/3] rounded-lg overflow-hidden bg-slate-800 shadow-lg">
                                 <CardVisuals movie={item.movie} isTheater={item.nomination_type === 'theater'} />
                             </div>
-                            <div>
+                            <div className="min-w-0">
                                 <h2 className="text-xl font-bold leading-tight mb-1">{item.movie.title}</h2>
                                 <div className="text-sm text-slate-400 mb-2">{item.movie.year || 'N/A'}</div>
                                 {item.movie.rt_score && (
@@ -363,23 +381,40 @@ function DraggableCard({ item, onVote, onSkip }) {
                                 )}
                             </div>
                         </div>
-                        <div className="flex flex-wrap gap-2 mb-6">
+
+                        <div className="flex flex-wrap gap-2 mb-4">
                             {item.movie.genre?.map(g => (
                                 <span key={g} className="text-xs bg-white/10 px-2 py-1 rounded-full">{g}</span>
                             ))}
                         </div>
-                        <p className="text-sm text-slate-300 leading-relaxed">
+
+                        <div className="mt-auto">
                             {item.theater_notes && (
-                                <span className="block mb-3 text-amber-200/80 italic border-l-2 border-amber-500/50 pl-3 py-1 bg-amber-500/5 rounded-r-lg">
+                                <span className="block mb-3 line-clamp-3 text-amber-200/80 italic border-l-2 border-amber-500/50 pl-3 py-1 bg-amber-500/5 rounded-r-lg">
                                     {item.theater_notes}
                                 </span>
                             )}
-                            {item.movie.description || "No description available."}
-                        </p>
+                            <p className="text-sm text-slate-300 leading-relaxed line-clamp-6">
+                                {description || "No description available."}
+                            </p>
+                            {hasLongDescription && (
+                                <button
+                                    type="button"
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onClick={(e) => {
+                                        e.stopPropagation()
+                                        onReadMore(item.movie)
+                                    }}
+                                    className="mt-3 inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-2 text-[11px] font-black uppercase tracking-[0.18em] text-white"
+                                >
+                                    Read More
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </div>
 
-                {/* Front Layer (Poster) - Slides up/down */}
+                {/* Front Layer (Poster) */}
                 <motion.div 
                     initial={false}
                     animate={{ y: isFlipped ? '-100%' : '0%' }}
@@ -454,7 +489,7 @@ function GridView({ nominations, myVotes, onSelect }) {
                                 {vote && (
                                     <div className="absolute top-1 right-1 p-1.5 rounded-full bg-black/60 backdrop-blur-sm border border-white/10">
                                         {vote === 1 && <ThumbsUp size={14} className="text-blue-500" fill="currentColor" />}
-                                        {vote === -2 && <ThumbsDown size={14} className="text-red-500" />}
+                                        {vote === -2 && <ThumbsDown size={14} className="text-red-500" fill="currentColor" />}
                                         {vote === 2 && <Heart size={14} className="text-pink-500" fill="currentColor" />}
                                     </div>
                                 )}
@@ -473,16 +508,18 @@ function GridView({ nominations, myVotes, onSelect }) {
 }
 
 function FilterButton({ label, active, onClick, activeColor = "bg-white text-black border-white", icon: Icon }) {
+    const shouldFill = Icon === ThumbsUp || Icon === ThumbsDown || Icon === Heart
+
     return (
         <button
             onClick={onClick}
             className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-all whitespace-nowrap flex items-center gap-1.5 ${
                 active 
                     ? activeColor 
-                    : 'bg-transparent border-white/10 text-slate-400 hover:border-white/30 hover:text-slate-200'
+                    : 'bg-transparent border-white/10 text-slate-400'
             }`}
         >
-            {Icon && <Icon size={16} fill={active ? "currentColor" : "none"} />}
+            {Icon && <Icon size={16} fill={shouldFill ? "currentColor" : "none"} />}
             {label}
         </button>
     )
@@ -544,7 +581,7 @@ function ExpandedCard({ nom, vote, onVote, onClose }) {
             </div>
             
             <button 
-                className="absolute top-4 right-4 p-2 rounded-full bg-black/40 hover:bg-black/60 text-white/70 hover:text-white backdrop-blur-sm border border-white/10 z-20"
+                className="absolute top-4 right-4 p-2 rounded-full bg-black/40 text-white/70 backdrop-blur-sm border border-white/10 z-20"
                 onClick={onClose}
             >
                 <X size={20} />
@@ -553,11 +590,51 @@ function ExpandedCard({ nom, vote, onVote, onClose }) {
     )
 }
 
-function CardVisuals({ movie, showMeta = false, isTheater = false }) {
-    const posterUrl = movie.poster_path ? `${POSTER_BASE_URL}${movie.poster_path}` : null
-    const fallbackGradient = getFallbackGradient(movie.title)
-    const FallbackIcon = getFallbackIcon(movie.title)
+function DescriptionModal({ movie, onClose }) {
+    const description = movie?.description?.trim() || 'No description available.'
+    return (
+        <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[110] flex items-end justify-center bg-black/85 backdrop-blur-md"
+            onClick={onClose}
+        >
+            <motion.div
+                initial={{ y: '100%' }}
+                animate={{ y: 0 }}
+                exit={{ y: '100%' }}
+                transition={{ type: 'spring', damping: 28, stiffness: 260 }}
+                className="relative flex h-[70dvh] w-full max-w-md flex-col rounded-t-[32px] border border-white/10 bg-gradient-to-b from-slate-950 via-slate-900 to-black px-5 pt-5"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="mb-4 flex items-center justify-between">
+                    <div>
+                        <div className="text-[11px] font-black uppercase tracking-[0.2em] text-indigo-300">Movie Description</div>
+                        <div className="mt-1 text-lg font-bold text-white leading-tight">{movie?.title}</div>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="rounded-full bg-white/10 p-2 text-white"
+                    >
+                        <X size={20} />
+                    </button>
+                </div>
 
+                <div className="flex-1 overflow-y-auto pb-6">
+                    <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-4">
+                        <p className="text-sm leading-relaxed text-slate-200 whitespace-pre-wrap">
+                            {description}
+                        </p>
+                    </div>
+                </div>
+            </motion.div>
+        </motion.div>
+    )
+}
+
+function CardVisuals({ movie, showMeta = false, isTheater = false }) {
     return (
         <div className="w-full h-full relative">
             {isTheater && (
@@ -566,16 +643,15 @@ function CardVisuals({ movie, showMeta = false, isTheater = false }) {
                     <span>Theater</span>
                 </div>
             )}
-            {posterUrl ? (
-                <img src={posterUrl} alt={movie.title} className="w-full h-full object-cover pointer-events-none select-none" draggable={false} />
-            ) : (
-                <div className={`w-full h-full bg-gradient-to-br ${fallbackGradient} flex flex-col items-center justify-center p-4 text-center`}>
-                    <FallbackIcon size={64} className="text-white/20 mb-4" />
-                    <div className="text-2xl font-black uppercase tracking-tighter text-white/90 line-clamp-3">
-                        {movie.title}
-                    </div>
-                </div>
-            )}
+            <MoviePoster
+                title={movie.title}
+                posterPath={movie.poster_path}
+                className="w-full h-full"
+                imageClassName="w-full h-full object-cover pointer-events-none select-none"
+                iconSize={64}
+                showTitle
+                titleClassName="mt-4 text-2xl font-black uppercase tracking-tighter text-white/90 line-clamp-3"
+            />
             
             {/* Gradient Overlay for Text Readability */}
             <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent pointer-events-none" />
@@ -596,22 +672,4 @@ function CardVisuals({ movie, showMeta = false, isTheater = false }) {
             )}
         </div>
     )
-}
-
-function getFallbackGradient(title) {
-    const len = title?.length || 0
-    const gradients = [
-        'from-rose-600 to-orange-600',
-        'from-blue-600 to-cyan-600',
-        'from-emerald-600 to-teal-600',
-        'from-violet-600 to-fuchsia-600',
-        'from-amber-500 to-orange-600'
-    ]
-    return gradients[len % gradients.length]
-}
-
-function getFallbackIcon(title) {
-    const len = title?.length || 0
-    const icons = [Film, Ticket, Clapperboard]
-    return icons[len % icons.length]
 }

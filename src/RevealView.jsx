@@ -5,9 +5,10 @@ import {
   Trophy, Shuffle, User, Star, X, RefreshCw, ChevronRight, 
   Ban, Ticket, Crown, Heart, ChevronLeft, Check, PlayCircle, ThumbsDown, ChevronDown
 } from 'lucide-react'
-import { POSTER_BASE_URL } from './tmdbClient'
 import LoadingSpinner from './LoadingSpinner'
 import { motion, AnimatePresence } from 'framer-motion'
+import { getProfileAvatarSrc } from './profileAvatars'
+import MoviePoster from './MoviePoster'
 
 const COLORS = [
   'bg-red-600', 'bg-orange-600', 'bg-amber-600', 'bg-yellow-600', 
@@ -15,6 +16,18 @@ const COLORS = [
   'bg-cyan-600', 'bg-sky-600', 'bg-blue-600', 'bg-indigo-600', 
   'bg-violet-600', 'bg-purple-600', 'bg-fuchsia-600', 'bg-pink-600', 'bg-rose-600'
 ]
+
+function getAvatarSrc(person) {
+  return person?.avatar_url || getProfileAvatarSrc(person?.avatar_key) || ''
+}
+
+function getBattleEliminationDelay(remainingCount) {
+  if (remainingCount >= 15) return 150
+  if (remainingCount >= 10) return 220
+  if (remainingCount >= 6) return 320
+  if (remainingCount >= 4) return 420
+  return 520
+}
 
 export default function RevealView() {
   const { code } = useParams()
@@ -72,7 +85,7 @@ export default function RevealView() {
     // 3. Fetch Attendees (for Decider mode & name mapping)
     const { data: attendeeData } = await supabase
         .from('event_attendees')
-        .select('user_id, profiles(display_name, username)')
+        .select('user_id, profiles(*)')
         .eq('event_id', code)
     
     const userMap = {}
@@ -82,7 +95,9 @@ export default function RevealView() {
         return {
             id: a.user_id,
             name: name,
-            color: COLORS[idx % COLORS.length]
+            color: COLORS[idx % COLORS.length],
+            avatar_key: a.profiles?.avatar_key || '',
+            avatar_url: a.profiles?.avatar_url || '',
         }
     })
     setAttendees(processedAttendees)
@@ -224,10 +239,10 @@ export default function RevealView() {
             setTimeout(() => {
                 setStatuses(prev => ({ ...prev, [target.id]: 'eliminated' }))
                 elimIndex++
-                // Speed up then slow down slightly
-                const delay = Math.max(150, 400 - (elimIndex * 40))
+                const remainingCount = losers.length - elimIndex + 2
+                const delay = getBattleEliminationDelay(remainingCount)
                 processRef.current = setTimeout(nextElim, delay)
-            }, 100)
+            }, 140)
         } else {
             // Only Winner & Runner Up remain -> Trigger Head-to-Head
             runHeadToHead(winnerItem, runnerUp)
@@ -338,7 +353,7 @@ export default function RevealView() {
       {/* HEADER */}
       <div className="px-4 py-4 flex items-center justify-between z-20 shrink-0">
         <div className="flex items-center gap-3">
-            <button onClick={() => navigate(`/room/${code}`)} className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors">
+            <button onClick={() => navigate(`/room/${code}`)} className="p-2 rounded-full bg-white/10 transition-colors">
                 <ChevronLeft size={20} />
             </button>
             <h1 className="text-2xl font-black tracking-tighter text-amber-400">
@@ -365,7 +380,7 @@ export default function RevealView() {
                         <button 
                             key={m.id}
                             onClick={() => setMode(m.id)}
-                            className={`w-full p-4 rounded-xl border text-left flex items-center gap-4 transition-all ${mode === m.id ? 'bg-amber-400/10 border-amber-400 ring-1 ring-amber-400' : 'bg-slate-900 border-white/10 hover:bg-slate-800'}`}
+                            className={`w-full p-4 rounded-xl border text-left flex items-center gap-4 transition-all ${mode === m.id ? 'bg-amber-400/10 border-amber-400 ring-1 ring-amber-400' : 'bg-slate-900 border-white/10'}`}
                         >
                             <div className={`p-3 rounded-lg ${mode === m.id ? 'bg-amber-400 text-black' : 'bg-slate-800 text-slate-500'}`}>
                                 <m.icon size={24} />
@@ -393,7 +408,7 @@ export default function RevealView() {
                 </div>
             </div>
             <div className="mt-4 max-w-md mx-auto w-full">
-                <button onClick={handleStart} className="w-full bg-amber-400 text-black font-black text-lg py-3 rounded-xl shadow-lg active:scale-95 transition-transform hover:bg-amber-300">
+                <button onClick={handleStart} className="w-full bg-amber-400 text-black font-black text-lg py-3 rounded-xl shadow-lg active:scale-95 transition-transform">
                     Start Ceremony
                 </button>
             </div>
@@ -441,13 +456,16 @@ export default function RevealView() {
             <div className="relative group mb-6">
                 <div 
                     onClick={() => setSelectedMovie(winner)}
-                    className="relative w-48 aspect-[2/3] rounded-2xl shadow-[0_0_50px_rgba(245,158,11,0.4)] ring-4 ring-amber-400 flex-none animate-in zoom-in-95 duration-700 bg-slate-800 overflow-hidden cursor-pointer transition-transform hover:scale-105"
+                    className="relative w-48 aspect-[2/3] rounded-2xl shadow-[0_0_50px_rgba(245,158,11,0.4)] ring-4 ring-amber-400 flex-none animate-in zoom-in-95 duration-700 bg-slate-800 overflow-hidden cursor-pointer transition-transform"
                 >
-                    {winner.poster_path ? (
-                        <img src={`${POSTER_BASE_URL}${winner.poster_path}`} className="w-full h-full object-cover" alt="Winner"/>
-                    ) : (
-                        <div className="w-full h-full flex items-center justify-center text-slate-500 font-bold text-2xl p-4 text-center">{winner.title}</div>
-                    )}
+                    <MoviePoster
+                        title={winner.title}
+                        posterPath={winner.poster_path}
+                        className="w-full h-full"
+                        iconSize={36}
+                        showTitle
+                        titleClassName="mt-4 text-2xl font-black tracking-tight text-white/90"
+                    />
                 </div>
                 <div className="absolute -top-6 -right-6 bg-amber-400 text-black p-2 rounded-full shadow-lg animate-bounce z-10">
                     <Crown size={32} fill="white" />
@@ -460,12 +478,12 @@ export default function RevealView() {
             <button 
                 onClick={() => handleConfirmWinner(winner)}
                 disabled={saving}
-                className="w-full max-w-xs bg-amber-400 text-black font-black py-3 rounded-xl mb-4 hover:bg-amber-300 transition-colors flex items-center justify-center gap-2"
+                className="w-full max-w-xs bg-amber-400 text-black font-black py-3 rounded-xl mb-4 transition-colors flex items-center justify-center gap-2"
             >
                 {saving ? 'Saving...' : <><Check size={20} /> Lock In Winner</>}
             </button>
 
-            <button onClick={() => setStage('setup')} className="w-full max-w-xs bg-slate-800 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-700 border border-white/10 mb-8">
+            <button onClick={() => setStage('setup')} className="w-full max-w-xs bg-slate-800 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 border border-white/10 mb-8">
                 <RefreshCw size={18} /> Restart Ceremony
             </button>
 
@@ -478,17 +496,20 @@ export default function RevealView() {
                     {rankings.filter(i => i.id !== winner.id).map((item, idx) => (
                         <div key={item.id} 
                              onClick={() => setSelectedMovie(item)}
-                             className="flex items-center gap-3 p-3 bg-slate-900/50 border border-white/5 rounded-xl cursor-pointer hover:bg-slate-800 transition-colors">
+                             className="flex items-center gap-3 p-3 bg-slate-900/50 border border-white/5 rounded-xl cursor-pointer transition-colors">
                             <span className="font-mono text-slate-500 w-6 text-center font-bold">#{idx + 2}</span>
-                            <div className="w-10 h-14 shrink-0 bg-slate-800 rounded overflow-hidden">
-                                {item.poster_path && <img src={`${POSTER_BASE_URL}${item.poster_path}`} className="w-full h-full object-cover" alt=""/>}
-                            </div>
+                            <MoviePoster
+                                title={item.title}
+                                posterPath={item.poster_path}
+                                className="w-10 h-14 shrink-0 rounded"
+                                iconSize={16}
+                            />
                             <div className="flex-1 min-w-0">
                                 <h4 className="text-sm font-bold text-slate-300 truncate">{item.title}</h4>
                                 <div className="flex gap-3 text-[10px] text-slate-500 mt-1">
                                     <span className="flex items-center gap-1"><Heart size={10} className="text-pink-500"/> {item.votes.super}</span>
                                     <span className="flex items-center gap-1"><Check size={10} className="text-blue-500"/> {item.votes.like}</span>
-                                    <span className="flex items-center gap-1"><ThumbsDown size={10} className="text-red-500"/> {item.votes.dislike}</span>
+                                    <span className="flex items-center gap-1"><ThumbsDown size={10} className="text-red-500" fill="currentColor" /> {item.votes.dislike}</span>
                                 </div>
                             </div>
                         </div>
@@ -502,8 +523,8 @@ export default function RevealView() {
       {stage === 'decider_choice' && winner && (
         <div className="flex-1 flex flex-col items-center pt-10 px-6 animate-in fade-in duration-500 overflow-y-auto">
             <div className={`w-40 h-40 shrink-0 rounded-3xl ${winner.color} mx-auto flex items-center justify-center mb-6 text-6xl font-black border-4 border-white shadow-[0_0_50px_rgba(245,158,11,0.4)] ring-4 ring-amber-400 overflow-hidden relative`}>
-                {winner.avatar_url ? (
-                    <img src={winner.avatar_url} className="w-full h-full object-cover" alt={winner.name} />
+                {getAvatarSrc(winner) ? (
+                    <img src={getAvatarSrc(winner)} className="w-full h-full object-cover" alt={winner.name} />
                 ) : (
                     winner.name.charAt(0).toUpperCase()
                 )}
@@ -512,7 +533,7 @@ export default function RevealView() {
             <h1 className="text-3xl font-black text-center mb-2 leading-tight text-white">{winner.name} decides!</h1>
             <p className="text-slate-400 text-sm mb-6 text-center">Pass the phone to {winner.name}. It's their call.</p>
 
-            <button onClick={() => setStage('setup')} className="w-full max-w-xs bg-slate-800 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-700 border border-white/10 mb-8">
+            <button onClick={() => setStage('setup')} className="w-full max-w-xs bg-slate-800 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 border border-white/10 mb-8">
                 <RefreshCw size={18} /> Restart Ceremony
             </button>
 
@@ -531,20 +552,23 @@ export default function RevealView() {
                             key={movie.id}
                             disabled={saving}
                             onClick={() => handleConfirmWinner(movie)}
-                            className="w-full flex items-center gap-3 p-3 bg-slate-900/50 border border-white/5 rounded-xl cursor-pointer hover:bg-slate-800 transition-colors text-left group"
+                            className="w-full flex items-center gap-3 p-3 bg-slate-900/50 border border-white/5 rounded-xl cursor-pointer transition-colors text-left group"
                         >
-                            <div className="w-10 h-14 shrink-0 bg-slate-800 rounded overflow-hidden">
-                                {movie.poster_path && <img src={`${POSTER_BASE_URL}${movie.poster_path}`} className="w-full h-full object-cover" alt=""/>}
-                            </div>
+                            <MoviePoster
+                                title={movie.title}
+                                posterPath={movie.poster_path}
+                                className="w-10 h-14 shrink-0 rounded"
+                                iconSize={16}
+                            />
                             <div className="flex-1 min-w-0">
-                                <h4 className="text-sm font-bold text-slate-300 group-hover:text-amber-400 transition-colors truncate">{movie.title}</h4>
+                                <h4 className="text-sm font-bold text-slate-300 transition-colors truncate">{movie.title}</h4>
                                 <div className="flex gap-3 text-[10px] text-slate-500 mt-1">
                                     <span className="flex items-center gap-1"><Heart size={10} className="text-pink-500"/> {movie.votes.super}</span>
                                     <span className="flex items-center gap-1"><Check size={10} className="text-blue-500"/> {movie.votes.like}</span>
                                 </div>
                             </div>
                             <div className="self-center pl-2">
-                                {saving ? <LoadingSpinner size={16} showLabel={false} /> : <PlayCircle size={20} className="text-slate-600 group-hover:text-amber-400" />}
+                                {saving ? <LoadingSpinner size={16} showLabel={false} /> : <PlayCircle size={20} className="text-slate-600" />}
                             </div>
                         </button>
                     ))}
@@ -569,7 +593,6 @@ export default function RevealView() {
 const GridItem = ({ item, type, status, highlight, highlightType }) => {
     const isEliminated = status === 'eliminated'
     const isActive = highlight
-    const posterUrl = item.poster_path ? `${POSTER_BASE_URL}${item.poster_path}` : null
 
     // Determine border color based on highlight type
     const borderColor = highlightType === 'elimination' ? 'border-red-500 ring-red-500 shadow-red-500/50' : 'border-amber-500 ring-amber-500 shadow-amber-500/50'
@@ -577,25 +600,16 @@ const GridItem = ({ item, type, status, highlight, highlightType }) => {
     return (
         <div className={`relative ${type === 'user' ? 'aspect-square' : 'aspect-[2/3]'} rounded-xl overflow-hidden transition-all duration-300 bg-slate-800 border ${isActive ? `${borderColor} ring-4 scale-105 z-20 shadow-[0_0_30px_rgba(0,0,0,0.5)]` : 'border-white/10'} ${isEliminated ? 'opacity-30 grayscale scale-95' : ''}`}>
             {type === 'movie' ? (
-                <>
-                    {posterUrl ? (
-                        <img src={posterUrl} className="w-full h-full object-cover" alt={item.title} />
-                    ) : (
-                        <div className="w-full h-full flex items-center justify-center p-2 text-center text-xs font-bold text-slate-500">
-                            {item.title}
-                        </div>
-                    )}
-                    
-                    {!isEliminated && (
-                        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 to-transparent p-2 pt-6">
-                            <p className="text-[10px] font-bold text-white truncate text-center">{item.title}</p>
-                        </div>
-                    )}
-                </>
+                <MoviePoster
+                    title={item.title}
+                    posterPath={item.poster_path}
+                    className="w-full h-full"
+                    iconSize={20}
+                />
             ) : (
                 <div className={`w-full h-full flex flex-col items-center justify-center ${item.color} relative`}>
-                    {item.avatar_url ? (
-                        <img src={item.avatar_url} className="w-full h-full object-cover" alt={item.name} />
+                    {getAvatarSrc(item) ? (
+                        <img src={getAvatarSrc(item)} className="w-full h-full object-cover" alt={item.name} />
                     ) : (
                         <span className="text-4xl font-black text-white/90">{item.name.charAt(0).toUpperCase()}</span>
                     )}
@@ -616,17 +630,20 @@ const GridItem = ({ item, type, status, highlight, highlightType }) => {
 
 const MovieDetailModal = ({ movie, onClose, onConfirm, isWinner }) => {
     if (!movie) return null;
-    const posterUrl = movie.poster_path ? `${POSTER_BASE_URL}${movie.poster_path}` : null
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-200" onClick={onClose}>
             <div className="w-full max-w-lg max-h-[85vh] bg-slate-900 rounded-3xl overflow-hidden shadow-2xl border border-white/10 flex flex-col" onClick={e => e.stopPropagation()}>
                 <div className="flex-1 overflow-y-auto p-6">
                     <div className="flex gap-4 mb-6">
-                        <div className="w-24 shrink-0 aspect-[2/3] rounded-lg overflow-hidden bg-slate-800 shadow-lg">
-                            {posterUrl ? <img src={posterUrl} className="w-full h-full object-cover" alt={movie.title} /> : <div className="w-full h-full bg-slate-800" />}
-                        </div>
-                        <div>
+                        <MoviePoster
+                            title={movie.title}
+                            posterPath={movie.poster_path}
+                            className="w-24 shrink-0 aspect-[2/3] rounded-lg shadow-lg"
+                            iconSize={22}
+                            showTitle
+                        />
+                        <div className="min-w-0">
                             <h2 className="text-2xl font-bold leading-tight mb-1 text-white">{movie.title}</h2>
                             <div className="text-sm text-slate-400 mb-2">{movie.year}</div>
                             {movie.rt_score && (
@@ -634,8 +651,9 @@ const MovieDetailModal = ({ movie, onClose, onConfirm, isWinner }) => {
                                     <Star size={12} fill="currentColor" /> {movie.rt_score}%
                                 </div>
                             )}
-                            <div className="text-xs text-slate-500">
-                                Nominated by <span className="text-slate-300 font-bold">{movie.nominated_by_name}</span>
+                            <div className="inline-flex flex-wrap items-center gap-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 text-[11px] text-amber-200">
+                                <span className="font-semibold uppercase tracking-[0.16em] text-amber-400">Nominated by</span>
+                                <span className="font-bold text-slate-100">{movie.nominated_by_name}</span>
                             </div>
                         </div>
                     </div>
@@ -660,18 +678,18 @@ const MovieDetailModal = ({ movie, onClose, onConfirm, isWinner }) => {
                         )}
                         {movie.voteDetails.filter(v => v.type === -2).length > 0 && (
                             <div>
-                                <div className="text-xs font-bold text-red-500 mb-1 flex items-center gap-1"><ThumbsDown size={12} /> Dislikes</div>
+                                <div className="text-xs font-bold text-red-500 mb-1 flex items-center gap-1"><ThumbsDown size={12} fill="currentColor" /> Dislikes</div>
                                 <div className="flex flex-wrap gap-2">{movie.voteDetails.filter(v => v.type === -2).map((v, i) => <span key={i} className="text-xs bg-red-500/10 text-red-400 px-2 py-1 rounded-full">{v.name}</span>)}</div>
                             </div>
                         )}
                     </div>
                 </div>
                 <div className="p-4 border-t border-white/10 flex gap-3">
-                    <button onClick={onClose} className="flex-1 py-3 bg-slate-800 text-white font-bold rounded-xl hover:bg-slate-700 transition-colors">
+                    <button onClick={onClose} className="flex-1 py-3 bg-slate-800 text-white font-bold rounded-xl transition-colors">
                         Close
                     </button>
                     {onConfirm && (
-                        <button onClick={onConfirm} className="flex-1 py-3 bg-amber-400 text-black font-bold rounded-xl hover:bg-amber-300 transition-colors">
+                        <button onClick={onConfirm} className="flex-1 py-3 bg-amber-400 text-black font-bold rounded-xl transition-colors">
                             {isWinner ? 'Confirm Winner' : 'Select This'}
                         </button>
                     )}

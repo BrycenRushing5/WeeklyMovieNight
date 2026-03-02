@@ -2,10 +2,12 @@ import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion' 
 import { X, Search, Filter, Book, Ticket, Users, ChevronDown, ChevronUp, Minus, Plus, Check, SquarePen, Film, Star } from 'lucide-react' 
 import { supabase } from './supabaseClient'
-import { POSTER_BASE_URL } from './tmdbClient'
+import { normalizeMovieSearchText, searchMoviesByText } from './movieSearch'
+import MoviePoster from './MoviePoster'
 
-const DEFAULT_GENRES = ['Action', 'Adventure', 'Comedy', 'Documentary', 'Holiday', 'Horror', 'Romance', 'Sci-Fi', 'Mystery & thriller', 'Fantasy']
-const COMMON_GENRES = ['Action', 'Adventure', 'Comedy', 'Documentary', 'Holiday', 'Horror', 'Romance', 'Sci-Fi', 'Mystery & thriller', 'Fantasy']
+const DEFAULT_GENRES = ['Action', 'Adventure', 'Comedy', 'Documentary', 'Horror', 'Romance', 'Sci-Fi', 'Mystery & thriller', 'Fantasy']
+const COMMON_GENRES = ['Action', 'Adventure', 'Comedy', 'Documentary', 'Horror', 'Romance', 'Sci-Fi', 'Mystery & thriller', 'Fantasy']
+const DEFAULT_MIN_SCORE = 0
 
 export default function SearchMovies({ eventId, groupId, onClose, onNominate, customAction, customRemoveAction }) {
   const isEventMode = !!eventId
@@ -32,7 +34,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
   
   // Filters
   const [showFilters, setShowFilters] = useState(false)
-  const [minScore, setMinScore] = useState(70)
+  const [minScore, setMinScore] = useState(DEFAULT_MIN_SCORE)
   const [genreFilters, setGenreFilters] = useState([])
   const [showNominationGuide, setShowNominationGuide] = useState(true)
 
@@ -113,15 +115,11 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
     const requestId = ++searchRequestId.current
     let data = null
     if (searchTerm) {
-      const { data: fuzzyData } = await supabase.rpc('search_movies_fuzzy', {
-        query: searchTerm,
-        limit_count: 20
-      })
-      data = fuzzyData
+      data = await searchMoviesByText(searchTerm, { limit: 20 })
     } else {
       let query = supabase.from('movies').select()
       if (genreFilters.length > 0) query = query.overlaps('genre', genreFilters)
-      if (minScore > 0) query = query.or(`rt_score.gte.${minScore},rt_score.is.null`)
+      if (minScore > 0) query = query.gte('rt_score', minScore)
       query = query.limit(20)
       const { data: listData } = await query
       data = listData
@@ -137,12 +135,9 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
       setTheaterResults([])
       return
     }
-    const { data: fuzzyData } = await supabase.rpc('search_movies_fuzzy', {
-      query: trimmed,
-      limit_count: 12
-    })
+    const data = await searchMoviesByText(trimmed, { limit: 12 })
     if (requestId !== theaterSearchRequestId.current) return
-    setTheaterResults(fuzzyData || [])
+    setTheaterResults(data || [])
   }
 
   function handleSearchSubmit(e) {
@@ -221,7 +216,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
     const { skipSearchMatch = false } = options
     const normalizedTerm = normalizeText(searchTerm)
     return list.filter(m => {
-        const score = m.rt_score === null ? 100 : m.rt_score // Treat null as 100
+        const score = typeof m.rt_score === 'number' ? m.rt_score : 0
         const scorePass = score >= minScore
         const movieGenres = Array.isArray(m.genre) ? m.genre : (m.genre ? [m.genre] : [])
         const genrePass = genreFilters.length === 0 || genreFilters.some(g => movieGenres.includes(g))
@@ -232,9 +227,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
   }
 
   function normalizeText(value) {
-    return (value || '')
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, '')
+    return normalizeMovieSearchText(value)
   }
   
   const toggleGenreFilter = (genre) => {
@@ -453,7 +446,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                                     setSearchTerm('')
                                     searchInputRef.current?.focus()
                                 }}
-                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500"
                             >
                                 <X size={18} />
                             </button>
@@ -505,7 +498,7 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
         )}
 
         {/* LIST RENDERING */}
-        <div ref={listRef} className="flex-1 overflow-y-auto pr-3 min-h-0" style={{ scrollbarGutter: 'stable' }}>
+        <div ref={listRef} className="flex-1 overflow-y-auto min-h-0">
             {showFilters && activeTab !== 'theater' && !isWritingIn && (
                 <div className="mb-4 p-4 bg-slate-900 border border-white/10 rounded-xl space-y-4">
                         <div>
@@ -542,13 +535,13 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                 <>
                     <button 
                       onClick={() => setIsWritingIn(true)}
-                      className="w-full py-2.5 px-4 mb-3 bg-[#121214]/50 border border-[#2a2a2e] rounded-lg flex items-center justify-between group hover:bg-[#121214] transition-colors"
+                      className="w-full py-2.5 px-4 mb-3 bg-[#121214]/50 border border-[#2a2a2e] rounded-lg flex items-center justify-between group transition-colors"
                     >
                       <div className="flex items-center gap-2">
-                        <div className="p-1 bg-[#2a2a2e] rounded text-slate-400 group-hover:text-white transition-colors">
+                        <div className="p-1 bg-[#2a2a2e] rounded text-slate-400 transition-colors">
                           <SquarePen size={12} />
                         </div>
-                        <span className="text-xs font-medium text-slate-400 group-hover:text-slate-200 transition-colors">
+                        <span className="text-xs font-medium text-slate-400 transition-colors">
                           Can't find a movie?
                         </span>
                       </div>
@@ -723,12 +716,12 @@ export default function SearchMovies({ eventId, groupId, onClose, onNominate, cu
                       )}
                       {theaterSelectedMovie && (
                         <div className="bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-lg p-3 mt-3 text-left">
-                          <div className="flex justify-between gap-2.5 items-center">
-                            <div className="font-bold">{theaterSelectedMovie.title}</div>
+                          <div className="flex justify-between gap-2.5 items-start">
+                            <div className="font-bold leading-snug break-words whitespace-normal flex-1 min-w-0">{theaterSelectedMovie.title}</div>
                             <button
                               type="button"
                               onClick={() => setTheaterSelectedMovie(null)}
-                              className="bg-transparent border-none text-slate-400 inline-flex"
+                              className="bg-transparent border-none text-slate-400 inline-flex shrink-0 mt-0.5"
                               aria-label="Clear selected movie"
                             >
                               <X size={16} />
@@ -865,37 +858,57 @@ function TabButton({ active, children, onClick }) {
 }
 
 function MovieCard({ movie, onClick, showWatchlistAction, isInWatchlist, onToggleWatchlist, onSelect }) {
-    const posterUrl = movie.poster_path ? `${POSTER_BASE_URL}${movie.poster_path}` : null
     const score = movie.rt_score || movie.vote_average ? Math.round(movie.rt_score || (movie.vote_average * 10)) + '%' : null
+    const isWatchlistSearchCard = Boolean(showWatchlistAction && !onSelect)
 
     return (
-      <div className="flex gap-3 p-3 bg-slate-900/40 border border-white/5 rounded-xl group cursor-pointer hover:bg-slate-800 transition-colors mb-3">
+      <div className="flex gap-3 p-3 bg-slate-900/40 border border-white/5 rounded-xl group cursor-pointer transition-colors mb-3">
         <div className="flex gap-3 flex-1 min-w-0 cursor-pointer" onClick={onClick}>
-            <div className="w-20 h-28 shrink-0 rounded-lg bg-slate-800 flex items-center justify-center relative overflow-hidden">
-              {posterUrl ? (
-                <img src={posterUrl} alt={movie.title} className="w-full h-full object-cover" />
-              ) : (
-                <Film className="text-white/20" size={20} />
-              )}
-            </div>
+            <MoviePoster
+              title={movie.title}
+              posterPath={movie.poster_path}
+              className="w-20 h-28 shrink-0 rounded-lg"
+              iconSize={20}
+            />
 
-            <div className="flex-1 flex flex-col justify-between py-1 min-w-0">
+            <div className="flex-1 flex flex-col min-w-0">
               <div>
                 <div className="flex justify-between items-start gap-2">
-                  <h3 className="font-bold text-slate-100 text-sm leading-tight truncate w-full">{movie.title}</h3>
+                  <h3 className={`font-bold text-slate-100 text-sm leading-tight break-words whitespace-normal ${isWatchlistSearchCard ? 'line-clamp-3' : 'line-clamp-2'}`}>
+                    {movie.title}
+                  </h3>
                   {score && <span className="text-[10px] text-emerald-400 font-medium shrink-0">{score}</span>}
                 </div>
                 <p className="text-xs text-slate-500 mt-1">{movie.year || (movie.release_date ? movie.release_date.substring(0, 4) : '')}</p>
-                {movie.description && <p className="text-[10px] text-slate-600 mt-2 line-clamp-2 leading-relaxed">{movie.description}</p>}
+                {movie.description && (
+                  <p className={`mt-2 leading-relaxed break-words whitespace-normal ${isWatchlistSearchCard ? 'text-[11px] text-slate-400 line-clamp-3' : 'text-[10px] text-slate-600 line-clamp-2'}`}>
+                    {movie.description}
+                  </p>
+                )}
               </div>
+
+              {isWatchlistSearchCard && (
+                <div className="mt-3">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onToggleWatchlist(movie)
+                    }}
+                    className={`h-9 px-4 rounded-full inline-flex items-center gap-2 text-xs font-bold transition-all border active:scale-95 ${isInWatchlist ? 'bg-indigo-500/15 border-indigo-500/30 text-indigo-300' : 'bg-white/5 border-white/10 text-slate-200'}`}
+                  >
+                    {isInWatchlist ? <><Check size={14} /> Remove</> : <><Plus size={14} /> Add to Watchlist</>}
+                  </button>
+                </div>
+              )}
             </div>
         </div>
         
+        {!isWatchlistSearchCard && (
         <div className="flex items-center justify-end gap-3 mt-2 self-center">
             {showWatchlistAction && (
                 <button 
                   onClick={(e) => { e.stopPropagation(); onToggleWatchlist(movie) }}
-                  className={`p-2 rounded-full transition-all ${isInWatchlist ? 'text-indigo-500 bg-indigo-500/10' : 'text-slate-500 hover:text-slate-300'}`}
+                  className={`p-2 rounded-full transition-all ${isInWatchlist ? 'text-indigo-500 bg-indigo-500/10' : 'text-slate-500'}`}
                 >
                   {isInWatchlist ? <Check size={20} /> : <Plus size={20} />}
                 </button>
@@ -903,19 +916,18 @@ function MovieCard({ movie, onClick, showWatchlistAction, isInWatchlist, onToggl
             {onSelect && (
                 <button 
                   onClick={(e) => { e.stopPropagation(); onSelect(movie) }}
-                  className="h-9 px-4 rounded-full flex items-center gap-2 text-xs font-bold transition-all bg-white/5 text-slate-200 border border-white/10 hover:border-rose-500 hover:text-rose-500"
+                  className="h-9 px-4 rounded-full flex items-center gap-2 text-xs font-bold transition-all bg-white/5 text-slate-200 border border-white/10"
                  >
                   <Plus size={14} /> Nominate
                 </button>
             )}
         </div>
+        )}
       </div>
     )
 }
 
 function ExpandedCard({ movie, onClose, onAction, actionLabel, isAdded }) {
-    const posterUrl = movie.poster_path ? `${POSTER_BASE_URL}${movie.poster_path}` : null
-    
     return (
         <div 
             className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md"
@@ -927,13 +939,13 @@ function ExpandedCard({ movie, onClose, onAction, actionLabel, isAdded }) {
             >
                 <div className="flex-1 overflow-y-auto p-6 pb-24">
                     <div className="flex gap-4 mb-4">
-                        <div className="w-28 shrink-0 aspect-[2/3] rounded-xl overflow-hidden bg-slate-800 shadow-lg">
-                            {posterUrl ? (
-                                <img src={posterUrl} alt={movie.title} className="w-full h-full object-cover" />
-                            ) : (
-                                <div className="w-full h-full flex items-center justify-center text-slate-600"><Film size={24} /></div>
-                            )}
-                        </div>
+                        <MoviePoster
+                            title={movie.title}
+                            posterPath={movie.poster_path}
+                            className="w-28 shrink-0 aspect-[2/3] rounded-xl shadow-lg"
+                            iconSize={24}
+                            showTitle
+                        />
                         <div>
                             <h2 className="text-2xl font-bold leading-tight mb-1">{movie.title}</h2>
                             <div className="text-sm text-slate-400 mb-2">{movie.year || 'N/A'}</div>
@@ -956,13 +968,13 @@ function ExpandedCard({ movie, onClose, onAction, actionLabel, isAdded }) {
 
                 {/* Action Bar */}
                 <div className="absolute bottom-0 left-0 right-0 p-6 pt-12 bg-gradient-to-t from-slate-900 via-slate-900 to-transparent flex justify-center gap-4 z-10">
-                    <button onClick={onAction} className={`flex-1 h-12 rounded-xl border-2 flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-95 font-bold ${isAdded ? 'bg-indigo-500/20 border-indigo-500 text-indigo-400' : 'bg-white/5 border-white/10 text-white hover:border-indigo-500 hover:text-indigo-500'}`}>
+                    <button onClick={onAction} className={`flex-1 h-12 rounded-xl border-2 flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-95 font-bold ${isAdded ? 'bg-indigo-500/20 border-indigo-500 text-indigo-400' : 'bg-white/5 border-white/10 text-white'}`}>
                         {isAdded ? <><Check size={18} /> Added</> : <><Plus size={18} /> {actionLabel}</>}
                         </button>
                 </div>
             </div>
             
-            <button className="absolute top-4 right-4 p-2 rounded-full bg-black/40 text-white/70 hover:text-white backdrop-blur-sm border border-white/10 z-20" onClick={onClose}>
+            <button className="absolute top-4 right-4 p-2 rounded-full bg-black/40 text-white/70 backdrop-blur-sm border border-white/10 z-20" onClick={onClose}>
                 <X size={20} />
             </button>
         </div>
@@ -975,11 +987,15 @@ function CrewWatchlistRow({ entry, onSelect }) {
     const scoreColor = movie.rt_score >= 80 ? 'text-green-400 border-green-400' : movie.rt_score >= 60 ? 'text-yellow-400 border-yellow-400' : 'text-slate-400 border-slate-400'
     const names = users.map(u => u.name)
     const displayNames = names.length > 4 ? `${names.slice(0, 4).join(', ')} +${names.length - 4} more` : names.join(', ')
-    const posterUrl = movie.poster_path ? `${POSTER_BASE_URL}${movie.poster_path}` : null
 
     return (
-      <div onClick={onSelect} className="flex justify-between items-center p-3 mb-2 bg-white/5 rounded-lg cursor-pointer gap-3 hover:bg-white/10 transition-colors">
-        {posterUrl && <img src={posterUrl} alt={movie.title} className="w-10 h-14 object-cover rounded-md bg-slate-800" />}
+      <div onClick={onSelect} className="flex justify-between items-center p-3 mb-2 bg-white/5 rounded-lg cursor-pointer gap-3 transition-colors">
+        <MoviePoster
+          title={movie.title}
+          posterPath={movie.poster_path}
+          className="w-10 h-14 shrink-0 rounded-md"
+          iconSize={16}
+        />
         <div className="flex-1 min-w-0">
           <div className="font-semibold">{movie.title}</div>
           <div className="text-sm text-slate-400">{movie.genre?.join(', ')}</div>

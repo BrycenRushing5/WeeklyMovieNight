@@ -1,14 +1,21 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { supabase } from './supabaseClient'
-import { X, Star, ThumbsUp, Check, Film } from 'lucide-react'
-import { POSTER_BASE_URL } from './tmdbClient'
+import { X, Star, ThumbsUp } from 'lucide-react'
+import MoviePoster from './MoviePoster'
 
-export default function RateMovie({ eventId, movie, onClose }) {
+export default function RateMovie({ eventId, movie, existingReview = null, onClose, onSaved }) {
   const [rating, setRating] = useState(0)
   const [comment, setComment] = useState('')
   const [wouldWatchAgain, setWouldWatchAgain] = useState(false)
   const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setRating(existingReview?.rating || 0)
+    setComment(existingReview?.comment || '')
+    setWouldWatchAgain(Boolean(existingReview?.would_watch_again))
+    setSaving(false)
+  }, [existingReview, movie?.id])
 
   const handleSubmit = async () => {
     if (!rating) return alert('Pick a rating first!')
@@ -19,18 +26,22 @@ export default function RateMovie({ eventId, movie, onClose }) {
       return
     }
 
-    const { error: reviewError } = await supabase
+    const reviewPayload = {
+      event_id: eventId,
+      movie_id: movie.id,
+      user_id: user.id,
+      rating,
+      comment: comment.trim() || null,
+      would_watch_again: wouldWatchAgain
+    }
+
+    const { data: savedReview, error: reviewError } = await supabase
       .from('reviews')
       .upsert([
-        {
-          event_id: eventId,
-          movie_id: movie.id,
-          user_id: user.id,
-          rating,
-          comment: comment.trim() || null,
-          would_watch_again: wouldWatchAgain
-        }
+        reviewPayload
       ], { onConflict: 'event_id, user_id' })
+      .select('*')
+      .single()
 
     const { error: attendeeError } = await supabase
       .from('event_attendees')
@@ -43,6 +54,7 @@ export default function RateMovie({ eventId, movie, onClose }) {
       alert(`Error: ${reviewError?.message || attendeeError?.message}`)
       return
     }
+    onSaved?.(savedReview || reviewPayload)
     onClose()
   }
 
@@ -52,12 +64,14 @@ export default function RateMovie({ eventId, movie, onClose }) {
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+      onClick={onClose}
     >
       <motion.div
         initial={{ y: "100%" }} 
         animate={{ y: 0 }} 
         exit={{ y: "100%" }}
         transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+        onClick={(e) => e.stopPropagation()}
         className="w-full max-w-md h-[85dvh] bg-gradient-to-b from-slate-950 via-slate-900 to-black border border-white/10 rounded-3xl p-6 shadow-2xl flex flex-col overflow-hidden"
       >
         {/* Header */}
@@ -66,19 +80,19 @@ export default function RateMovie({ eventId, movie, onClose }) {
                 <h2 className="text-2xl font-black leading-tight text-white">Rate Movie</h2>
                 <p className="text-slate-400 text-sm truncate">{movie.title}</p>
              </div>
-             <button onClick={onClose} className="bg-white/10 p-2 rounded-full text-white hover:bg-white/20 transition-colors"><X size={20} /></button>
+             <button onClick={onClose} className="bg-white/10 p-2 rounded-full text-white transition-colors"><X size={20} /></button>
         </div>
 
         <div className="flex-1 overflow-y-auto -mx-6 px-6 pb-6">
             {/* Poster - Centered and larger */}
             <div className="flex justify-center mb-8">
-                <div className="relative w-40 aspect-[2/3] rounded-xl overflow-hidden shadow-[0_0_30px_rgba(255,255,255,0.1)] ring-1 ring-white/10">
-                    {movie.poster_path ? (
-                        <img src={`${POSTER_BASE_URL}${movie.poster_path}`} alt={movie.title} className="w-full h-full object-cover" />
-                    ) : (
-                        <div className="w-full h-full bg-slate-800 flex items-center justify-center text-slate-600"><Film size={32} /></div>
-                    )}
-                </div>
+                <MoviePoster
+                    title={movie.title}
+                    posterPath={movie.poster_path}
+                    className="relative w-40 aspect-[2/3] rounded-xl shadow-[0_0_30px_rgba(255,255,255,0.1)] ring-1 ring-white/10"
+                    iconSize={32}
+                    showTitle
+                />
             </div>
 
             {/* Rating */}
@@ -95,7 +109,7 @@ export default function RateMovie({ eventId, movie, onClose }) {
                 <button
                   key={value}
                   onClick={() => setRating(value)}
-                  className={`h-12 rounded-xl font-black text-lg transition-all ${isActive ? 'bg-indigo-500 text-white scale-105 shadow-lg' : 'bg-white/5 text-slate-500 hover:bg-white/10'}`}
+                  className={`h-12 rounded-xl font-black text-lg transition-all ${isActive ? 'bg-indigo-500 text-white scale-105 shadow-lg' : 'bg-white/5 text-slate-500'}`}
                 >
                   {value}
                 </button>
@@ -119,12 +133,11 @@ export default function RateMovie({ eventId, movie, onClose }) {
           <button
             type="button"
             onClick={() => setWouldWatchAgain(prev => !prev)}
-            className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all ${wouldWatchAgain ? 'bg-indigo-500/20 border-indigo-500 text-indigo-300' : 'bg-white/5 border-transparent text-slate-400 hover:bg-white/10'}`}
+            aria-pressed={wouldWatchAgain}
+            className={`w-full flex items-center justify-center gap-3 p-4 rounded-xl border transition-all ${wouldWatchAgain ? 'bg-indigo-500/20 border-indigo-500 text-indigo-300' : 'bg-white/5 border-transparent text-slate-400'}`}
           >
-            <span className="font-bold flex items-center gap-3">
-                <ThumbsUp size={20} className={wouldWatchAgain ? "fill-current" : ""} /> Would Watch Again
-            </span>
-            {wouldWatchAgain && <Check size={20} />}
+            <ThumbsUp size={20} className={wouldWatchAgain ? "fill-current" : ""} />
+            <span className="font-bold">Would Watch Again</span>
           </button>
         </div>
 
@@ -133,7 +146,7 @@ export default function RateMovie({ eventId, movie, onClose }) {
         <button
           onClick={handleSubmit}
           disabled={saving}
-          className="w-full bg-rose-500 text-white p-4 rounded-2xl font-black text-lg hover:bg-rose-600 transition-colors disabled:opacity-50 shadow-lg shadow-rose-500/20"
+          className="w-full bg-rose-500 text-white p-4 rounded-2xl font-black text-lg transition-colors disabled:opacity-50 shadow-lg shadow-rose-500/20"
         >
           {saving ? 'Saving...' : 'Submit Review'}
         </button>

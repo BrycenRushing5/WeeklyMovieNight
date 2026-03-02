@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { User, Lock, Film, ArrowRight, Eye, EyeOff } from 'lucide-react'
+import { User, Lock, ArrowRight, Eye, EyeOff } from 'lucide-react'
 import { supabase } from './supabaseClient'
 
 export default function Auth() {
@@ -74,13 +74,26 @@ export default function Auth() {
         flexDirection: 'column', 
         justifyContent: 'flex-end', 
         alignItems: 'center', 
-        paddingBottom: '30px' 
+        paddingBottom: '30px',
+        paddingTop: '15px'
       }}>
-        <motion.div variants={itemVariants} initial="hidden" animate="visible" style={{ textAlign: 'center' }}>
-          <Film size={48} className="gradient-text" style={{ marginBottom: '10px', display: 'block', margin: '0 auto 10px auto' }} />
+        <motion.div variants={itemVariants} initial="hidden" animate="visible" style={{ textAlign: 'center', marginTop: '18px' }}>
+          <img
+            src="/flick-pick-logo.png"
+            alt="Flick Pick logo"
+            style={{
+              width: '112px',
+              height: '112px',
+              objectFit: 'contain',
+              display: 'block',
+              margin: '0 auto 14px auto',
+              filter: 'drop-shadow(0 0 24px rgba(99, 102, 241, 0.28))',
+            }}
+            draggable="false"
+          />
           <h1 style={{ fontSize: '2.5rem', fontWeight: '800', letterSpacing: '-1px', lineHeight: 1, margin: 0 }}>
-            <span className="gradient-text">Popcorn</span><br />
-            & Picks
+            <span style={{ color: '#e11d48' }}>Flick</span>
+            <span style={{ color: '#6366f1' }}>Pick</span>
           </h1>
           <p style={{ color: 'var(--text-muted)', marginTop: '10px', fontSize: '1.1rem' }}>
             {isSignUp ? 'Join the crew' : 'Welcome back'}

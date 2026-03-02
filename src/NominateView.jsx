@@ -1,15 +1,17 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from './supabaseClient'
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, motion, useAnimationControls } from 'framer-motion'
 import { 
   Search, Plus, Minus, Heart, Clock, Users, ChevronRight, ChevronLeft, 
   X, Check, Sparkles, MoreHorizontal, Film, Ticket, MapPin, SquarePen, Star, Filter
 } from 'lucide-react'
-import { POSTER_BASE_URL } from './tmdbClient'
 import LoadingSpinner from './LoadingSpinner'
+import { searchMoviesByText } from './movieSearch'
+import MoviePoster from './MoviePoster'
 
-const DEFAULT_GENRES = ['Action', 'Adventure', 'Comedy', 'Documentary', 'Holiday', 'Horror', 'Romance', 'Sci-Fi', 'Mystery & thriller', 'Fantasy']
+const DEFAULT_GENRES = ['Action', 'Adventure', 'Comedy', 'Documentary', 'Horror', 'Romance', 'Sci-Fi', 'Mystery & thriller', 'Fantasy']
+const CAROUSEL_SPRING = { type: "spring", stiffness: 300, damping: 30 }
 
 export default function NominateView() {
   const { code } = useParams()
@@ -48,17 +50,19 @@ export default function NominateView() {
 
   // Watchlist Filter State
   const [watchlistSearchQuery, setWatchlistSearchQuery] = useState('')
-  const [watchlistFilterGenre, setWatchlistFilterGenre] = useState('')
+  const [watchlistFilterGenres, setWatchlistFilterGenres] = useState([])
   const [watchlistFilterScore, setWatchlistFilterScore] = useState(0)
   const [showWatchlistFilters, setShowWatchlistFilters] = useState(false)
 
   // Filter State
   const [showFilters, setShowFilters] = useState(false)
-  const [filterGenre, setFilterGenre] = useState("")
+  const [filterGenres, setFilterGenres] = useState([])
   const [filterScore, setFilterScore] = useState(0)
 
   // Swipe Refs
+  const carouselControls = useAnimationControls()
   const containerRef = useRef(null)
+  const dragDirectionRef = useRef(null)
   const [containerWidth, setContainerWidth] = useState(window.innerWidth)
   const [dragConstraints, setDragConstraints] = useState({ 
     left: -(window.innerWidth * 3), 
@@ -73,6 +77,7 @@ export default function NominateView() {
 
   const searchTimeout = useRef(null)
   const theaterSearchTimeout = useRef(null)
+  const searchRequestId = useRef(0)
 
   const tabs = ['search', 'watchlist', 'history', 'theater']
   const activeTab = tabs[activeIndex]
@@ -81,6 +86,8 @@ export default function NominateView() {
   const manualScoreColor = !isNaN(manualScoreNum)
     ? (manualScoreNum >= 80 ? 'text-green-400 border-green-500/50' : manualScoreNum >= 60 ? 'text-yellow-400 border-yellow-500/50' : 'text-slate-400 border-slate-500/50')
     : 'text-slate-500 border-[#2a2a2e]'
+  const trimmedSearchQuery = searchQuery.trim()
+  const filteredSearchResults = applyFilters(searchResults)
 
   useEffect(() => {
     loadInitialData()
@@ -91,7 +98,7 @@ export default function NominateView() {
         if (searchTimeout.current) clearTimeout(searchTimeout.current)
         searchTimeout.current = setTimeout(() => performSearch(searchQuery), 300)
     }
-  }, [searchQuery, activeTab])
+  }, [searchQuery, activeTab, filterGenres, filterScore])
 
   useEffect(() => {
     if (activeTab === 'theater') {
@@ -114,6 +121,13 @@ export default function NominateView() {
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [])
+
+  useEffect(() => {
+    carouselControls.start({
+      x: -activeIndex * containerWidth,
+      transition: CAROUSEL_SPRING
+    })
+  }, [activeIndex, containerWidth, carouselControls])
 
   // Scroll inactive tabs to top when switching
   useEffect(() => {
@@ -216,8 +230,9 @@ export default function NominateView() {
     // 1. Recent Nominations (Last 20)
     const { data: recentNoms } = await supabase
         .from('nominations')
-        .select('movie:movies(*)')
+        .select('event_id, movie:movies(*)')
         .eq('nominated_by', currentUserId)
+        .neq('event_id', code)
         .order('id', { ascending: false })
         .limit(20)
     
@@ -277,14 +292,42 @@ export default function NominateView() {
   }
 
   async function performSearch(query) {
-    if (!query.trim()) {
-        setSearchResults([])
-        return
-    }
+    const requestId = ++searchRequestId.current
+    const trimmedQuery = query.trim()
     setIsSearching(true)
-    const { data } = await supabase.rpc('search_movies_fuzzy', { query, limit_count: 20 })
-    setSearchResults(data || [])
-    setIsSearching(false)
+
+    try {
+        let data = []
+
+        if (trimmedQuery) {
+            data = await searchMoviesByText(trimmedQuery, { limit: 20 })
+        } else {
+            let browseQuery = supabase
+                .from('movies')
+                .select('*')
+
+            if (filterGenres.length > 0) browseQuery = browseQuery.overlaps('genre', filterGenres)
+            if (filterScore > 0) browseQuery = browseQuery.gte('rt_score', filterScore)
+
+            const { data: browseData } = await browseQuery
+                .order('rt_score', { ascending: false, nullsFirst: false })
+                .order('title', { ascending: true })
+                .limit(20)
+
+            data = browseData || []
+        }
+
+        if (requestId !== searchRequestId.current) return
+        setSearchResults(data)
+    } catch (error) {
+        if (requestId !== searchRequestId.current) return
+        console.error('Error searching movies:', error)
+        setSearchResults([])
+    } finally {
+        if (requestId === searchRequestId.current) {
+            setIsSearching(false)
+        }
+    }
   }
 
   async function performTheaterSearch(query) {
@@ -292,17 +335,17 @@ export default function NominateView() {
         setTheaterSearchResults([])
         return
     }
-    const { data } = await supabase.rpc('search_movies_fuzzy', { query, limit_count: 10 })
+    const data = await searchMoviesByText(query, { limit: 10 })
     setTheaterSearchResults(data || [])
   }
 
   // Helper: Apply Filters
   function applyFilters(list) {
     return list.filter(m => {
-        const score = m.rt_score === null ? 100 : m.rt_score
+        const score = typeof m.rt_score === 'number' ? m.rt_score : 0
         const scorePass = score >= filterScore
         const movieGenres = Array.isArray(m.genre) ? m.genre : (m.genre ? [m.genre] : [])
-        const genrePass = !filterGenre || movieGenres.includes(filterGenre)
+        const genrePass = filterGenres.length === 0 || filterGenres.some(genre => movieGenres.includes(genre))
         return scorePass && genrePass
     })
   }
@@ -310,13 +353,21 @@ export default function NominateView() {
   // Helper: Apply Watchlist Filters
   function getFilteredWatchlist(list) {
     return list.filter(m => {
-        const score = m.rt_score === null ? 100 : m.rt_score
+        const score = typeof m.rt_score === 'number' ? m.rt_score : 0
         const scorePass = score >= watchlistFilterScore
         const movieGenres = Array.isArray(m.genre) ? m.genre : (m.genre ? [m.genre] : [])
-        const genrePass = !watchlistFilterGenre || movieGenres.includes(watchlistFilterGenre)
+        const genrePass = watchlistFilterGenres.length === 0 || watchlistFilterGenres.some(genre => movieGenres.includes(genre))
         const titlePass = !watchlistSearchQuery || m.title.toLowerCase().includes(watchlistSearchQuery.toLowerCase())
         return scorePass && genrePass && titlePass
     })
+  }
+
+  const toggleSearchGenre = (genre) => {
+    setFilterGenres(prev => prev.includes(genre) ? prev.filter(item => item !== genre) : [...prev, genre])
+  }
+
+  const toggleWatchlistGenre = (genre) => {
+    setWatchlistFilterGenres(prev => prev.includes(genre) ? prev.filter(item => item !== genre) : [...prev, genre])
   }
 
   // --- Actions ---
@@ -448,15 +499,52 @@ export default function NominateView() {
   }
 
   // --- Swipe Handler ---
+  const handleDragStart = () => {
+    dragDirectionRef.current = null
+  }
+
+  const handleDirectionLock = (direction) => {
+    dragDirectionRef.current = direction
+  }
+
   const handleDragEnd = (e, { offset, velocity }) => {
     const swipe = offset.x
+    const swipeY = offset.y
     const threshold = 50
     const velocityThreshold = 500
-    
-    if ((swipe < -threshold || velocity.x < -velocityThreshold) && activeIndex < 3) {
-      setActiveIndex(prev => prev + 1)
-    } else if ((swipe > threshold || velocity.x > velocityThreshold) && activeIndex > 0) {
-      setActiveIndex(prev => prev - 1)
+    const horizontalTravel = Math.abs(swipe)
+    const verticalTravel = Math.abs(swipeY)
+    const horizontalVelocity = Math.abs(velocity.x)
+    const verticalVelocity = Math.abs(velocity.y)
+    const isHorizontalGesture =
+      dragDirectionRef.current === 'x' ||
+      (dragDirectionRef.current === null && horizontalTravel > verticalTravel * 1.25)
+
+    dragDirectionRef.current = null
+
+    if (!isHorizontalGesture) {
+      carouselControls.start({
+        x: -activeIndex * containerWidth,
+        transition: CAROUSEL_SPRING
+      })
+      return
+    }
+
+    let nextIndex = activeIndex
+
+    if ((swipe < -threshold || (velocity.x < -velocityThreshold && horizontalVelocity > verticalVelocity * 1.25)) && activeIndex < 3) {
+      nextIndex = activeIndex + 1
+    } else if ((swipe > threshold || (velocity.x > velocityThreshold && horizontalVelocity > verticalVelocity * 1.25)) && activeIndex > 0) {
+      nextIndex = activeIndex - 1
+    }
+
+    if (nextIndex !== activeIndex) {
+      setActiveIndex(nextIndex)
+    } else {
+      carouselControls.start({
+        x: -activeIndex * containerWidth,
+        transition: CAROUSEL_SPRING
+      })
     }
   }
 
@@ -465,18 +553,18 @@ export default function NominateView() {
   const MovieCard = ({ movie, context = 'search', isTheater = false, onClick, showActions = true, onSelect, hideNominate = false }) => {
     const isNominated = nominations.some(n => n.id === movie.id && n.nominationType === (isTheater ? 'theater' : 'streaming'))
     const inWatchlist = userWatchlist.has(movie.id)
-    const posterUrl = movie.poster_path ? `${POSTER_BASE_URL}${movie.poster_path}` : null
     const score = movie.rt_score || movie.vote_average ? Math.round(movie.rt_score || (movie.vote_average * 10)) + '%' : null
 
     return (
-      <div className="bg-slate-900/40 border border-white/5 rounded-xl p-3 flex gap-3 mb-3 group hover:border-rose-500/50 transition-colors">
+      <div className="bg-slate-900/40 border border-white/5 rounded-xl p-3 flex gap-3 mb-3 group transition-colors">
         {/* Poster - Clickable */}
-        <div className="w-20 h-28 shrink-0 rounded-lg bg-slate-800 flex items-center justify-center relative overflow-hidden cursor-pointer" onClick={onClick}>
-          {posterUrl ? (
-            <img src={posterUrl} alt={movie.title} className="w-full h-full object-cover" />
-          ) : (
-            <Film className="text-white/20" size={20} />
-          )}
+        <div className="relative cursor-pointer" onClick={onClick}>
+          <MoviePoster
+            title={movie.title}
+            posterPath={movie.poster_path}
+            className="w-20 h-28 shrink-0 rounded-lg"
+            iconSize={20}
+          />
           {movie.won && (
             <div className="absolute top-0 right-0 bg-yellow-500 text-black text-[8px] font-bold px-1.5 py-0.5 rounded-bl">WINNER</div>
           )}
@@ -503,7 +591,7 @@ export default function NominateView() {
             {/* Watchlist Action */}
             <button 
               onClick={(e) => toggleWatchlist(e, movie)}
-              className={`p-2 rounded-full transition-all ${inWatchlist ? 'text-pink-500 bg-pink-500/10' : 'text-slate-600 hover:text-slate-400'}`}
+              className={`p-2 rounded-full transition-all ${inWatchlist ? 'text-pink-500 bg-pink-500/10' : 'text-slate-600'}`}
             >
               <Heart size={18} fill={inWatchlist ? "currentColor" : "none"} />
             </button>
@@ -516,7 +604,7 @@ export default function NominateView() {
                     e.stopPropagation()
                     onSelect(movie)
                   }}
-                  className="h-9 px-4 rounded-full flex items-center gap-2 text-xs font-bold transition-all bg-[#1c1c1f] text-slate-200 border border-[#2a2a2e] hover:border-amber-500 hover:text-amber-500"
+                  className="h-9 px-4 rounded-full flex items-center gap-2 text-xs font-bold transition-all bg-[#1c1c1f] text-slate-200 border border-[#2a2a2e]"
                 >
                   <Check size={14} /> Select
                 </button>
@@ -530,7 +618,7 @@ export default function NominateView() {
                 h-9 px-4 rounded-full flex items-center gap-2 text-xs font-bold transition-all
                 ${isNominated 
                   ? 'bg-rose-500 text-white shadow-[0_0_15px_rgba(244,63,94,0.4)]' 
-                  : 'bg-[#1c1c1f] text-slate-200 border border-[#2a2a2e] hover:border-rose-500'
+                  : 'bg-[#1c1c1f] text-slate-200 border border-[#2a2a2e]'
                 }
               `}
             >
@@ -561,7 +649,7 @@ export default function NominateView() {
       <div className="px-4 py-4 flex flex-col gap-4 z-20 shrink-0">
         <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-                <button onClick={() => navigate(`/room/${code}`)} className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors">
+                <button onClick={() => navigate(`/room/${code}`)} className="p-2 rounded-full bg-white/10 transition-colors">
                     <ChevronLeft size={20} />
                 </button>
                 <h1 className="text-2xl font-black tracking-tighter text-rose-500">
@@ -579,7 +667,7 @@ export default function NominateView() {
               className={`flex-1 py-2 px-3 text-xs font-bold rounded-lg capitalize transition-all whitespace-nowrap z-10 ${
                 activeTab === tab
                   ? 'bg-white/20 text-white shadow-sm'
-                  : 'text-slate-500 hover:text-slate-300'
+                  : 'text-slate-500'
               }`}
             >
               {tab}
@@ -593,14 +681,15 @@ export default function NominateView() {
         <motion.div
             className="flex h-full"
             style={{ width: '400%', touchAction: 'pan-y' }}
+            animate={carouselControls}
             drag="x"
             dragConstraints={dragConstraints}
             dragElastic={0.1}
             dragDirectionLock
             dragMomentum={false}
+            onDragStart={handleDragStart}
+            onDirectionLock={handleDirectionLock}
             onDragEnd={handleDragEnd}
-            animate={{ x: -activeIndex * containerWidth }}
-            transition={{ type: "spring", stiffness: 300, damping: 30 }}
         >
         
         {/* --- SEARCH TAB --- */}
@@ -621,7 +710,7 @@ export default function NominateView() {
                 <button
                     type="button"
                     onClick={() => setSearchQuery('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500"
                 >
                     <X size={18} />
                 </button>
@@ -640,12 +729,12 @@ export default function NominateView() {
                     <div>
                         <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Genre</label>
                         <div className="flex flex-wrap gap-2">
-                            <button onClick={() => setFilterGenre("")} className={`px-3 py-1 rounded-full text-xs font-bold border ${!filterGenre ? 'bg-white text-black border-white' : 'border-white/10 text-slate-400'}`}>All</button>
+                            <button onClick={() => setFilterGenres([])} className={`px-3 py-1 rounded-full text-xs font-bold border ${filterGenres.length === 0 ? 'bg-white text-black border-white' : 'border-white/10 text-slate-400'}`}>All</button>
                             {DEFAULT_GENRES.map(g => (
                                 <button 
                                     key={g}
-                                    onClick={() => setFilterGenre(g === filterGenre ? "" : g)}
-                                    className={`px-3 py-1 rounded-full text-xs font-bold border ${g === filterGenre ? 'bg-rose-500 text-white border-rose-500' : 'border-white/10 text-slate-400'}`}
+                                    onClick={() => toggleSearchGenre(g)}
+                                    className={`px-3 py-1 rounded-full text-xs font-bold border ${filterGenres.includes(g) ? 'bg-rose-500 text-white border-rose-500' : 'border-white/10 text-slate-400'}`}
                                 >
                                     {g}
                                 </button>
@@ -666,13 +755,13 @@ export default function NominateView() {
 
             <button 
               onClick={() => setShowManualEntry(true)}
-              className="w-full py-2.5 px-4 bg-slate-900/50 border border-white/10 rounded-lg flex items-center justify-between group hover:bg-slate-900 transition-colors"
+              className="w-full py-2.5 px-4 bg-slate-900/50 border border-white/10 rounded-lg flex items-center justify-between group transition-colors"
             >
               <div className="flex items-center gap-2">
-                <div className="p-1 bg-[#2a2a2e] rounded text-slate-400 group-hover:text-white transition-colors">
+                <div className="p-1 bg-[#2a2a2e] rounded text-slate-400 transition-colors">
                   <SquarePen size={12} />
                 </div>
-                <span className="text-xs font-medium text-slate-400 group-hover:text-slate-200 transition-colors">
+                <span className="text-xs font-medium text-slate-400 transition-colors">
                   Can't find a movie?
                 </span>
               </div>
@@ -681,25 +770,24 @@ export default function NominateView() {
               </span>
             </button>
 
-            {searchQuery ? (
-              <div>
-                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Results</h3>
+            <div>
+                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">
+                  {trimmedSearchQuery ? 'Results' : 'Browse Movies'}
+                </h3>
                 {isSearching ? (
                     <div className="text-center text-slate-500 py-8">Searching...</div>
-                ) : searchResults.length > 0 ? (
-                    applyFilters(searchResults).map(movie => (
+                ) : filteredSearchResults.length > 0 ? (
+                    filteredSearchResults.map(movie => (
                         <MovieCard key={movie.id} movie={movie} onClick={() => setSelectedMovie(movie)} />
                     ))
                 ) : (
-                    <div className="text-center text-slate-500 py-4">No results found.</div>
+                    <div className="text-center text-slate-500 py-8">
+                      {trimmedSearchQuery || filterGenres.length > 0 || filterScore
+                        ? 'No movies match your search or filters.'
+                        : 'No movies available to browse right now.'}
+                    </div>
                 )}
-              </div>
-            ) : (
-              <div className="text-center py-20 opacity-40">
-                <Search size={48} className="mx-auto mb-4 text-slate-600" />
-                <p className="text-sm">Search for movies to nominate</p>
-              </div>
-            )}
+            </div>
           </div>
         </div>
 
@@ -731,9 +819,9 @@ export default function NominateView() {
                     <div>
                         <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Genre</label>
                         <div className="flex flex-wrap gap-2">
-                            <button onClick={() => setWatchlistFilterGenre("")} className={`px-3 py-1 rounded-full text-xs font-bold border ${!watchlistFilterGenre ? 'bg-white text-black border-white' : 'border-white/10 text-slate-400'}`}>All</button>
+                            <button onClick={() => setWatchlistFilterGenres([])} className={`px-3 py-1 rounded-full text-xs font-bold border ${watchlistFilterGenres.length === 0 ? 'bg-white text-black border-white' : 'border-white/10 text-slate-400'}`}>All</button>
                             {DEFAULT_GENRES.map(g => (
-                                <button key={g} onClick={() => setWatchlistFilterGenre(g === watchlistFilterGenre ? "" : g)} className={`px-3 py-1 rounded-full text-xs font-bold border ${g === watchlistFilterGenre ? 'bg-rose-500 text-white border-rose-500' : 'border-white/10 text-slate-400'}`}>{g}</button>
+                                <button key={g} onClick={() => toggleWatchlistGenre(g)} className={`px-3 py-1 rounded-full text-xs font-bold border ${watchlistFilterGenres.includes(g) ? 'bg-rose-500 text-white border-rose-500' : 'border-white/10 text-slate-400'}`}>{g}</button>
                             ))}
                         </div>
                     </div>
@@ -752,13 +840,13 @@ export default function NominateView() {
             <div className="flex bg-white/5 p-1 rounded-xl mb-4">
                 <button 
                     onClick={() => setWatchlistScope('mine')}
-                    className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${watchlistScope === 'mine' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+                    className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${watchlistScope === 'mine' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400'}`}
                 >
                     My Watchlist
                 </button>
                 <button 
                     onClick={() => setWatchlistScope('audience')}
-                    className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${watchlistScope === 'audience' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+                    className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${watchlistScope === 'audience' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400'}`}
                 >
                     Audience Watchlist
                 </button>
@@ -809,9 +897,13 @@ export default function NominateView() {
                         </div>
                         <div className="flex -space-x-2 overflow-hidden mb-3 pl-2">
                           {evt.userNominations.filter(m => !m.won).slice(0, 5).map(m => (
-                             <div key={m.id} className="w-8 h-8 rounded-full border border-[#050505] bg-slate-800 overflow-hidden">
-                                {m.poster_path ? <img src={`${POSTER_BASE_URL}${m.poster_path}`} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-slate-700" />}
-                             </div>
+                             <MoviePoster
+                                key={m.id}
+                                title={m.title}
+                                posterPath={m.poster_path}
+                                className="w-8 h-8 rounded-full border border-[#050505]"
+                                iconSize={12}
+                             />
                           ))}
                           {evt.userNominations.filter(m => !m.won).length > 5 && (
                             <div className="w-8 h-8 rounded-full border border-[#050505] bg-slate-800 flex items-center justify-center text-[10px] text-slate-400">
@@ -821,7 +913,7 @@ export default function NominateView() {
                         </div>
                         <button 
                           onClick={() => handleBulkImport(evt)}
-                          className="w-full py-2 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 text-xs font-bold rounded-lg transition-colors"
+                          className="w-full py-2 bg-blue-600/10 text-blue-400 text-xs font-bold rounded-lg transition-colors"
                         >
                           Import {evt.userNominations.filter(m => !m.won).length} Movies
                         </button>
@@ -888,7 +980,7 @@ export default function NominateView() {
                                     <button
                                         type="button"
                                         onClick={() => setTheaterSearchQuery('')}
-                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500"
                                     >
                                         <X size={18} />
                                     </button>
@@ -912,13 +1004,13 @@ export default function NominateView() {
                             <MovieCard movie={theaterSelectedMovie} isTheater={true} hideNominate={true} onClick={() => setSelectedMovie(theaterSelectedMovie)} />
                             <button
                                 onClick={() => setTheaterSelectedMovie(null)}
-                                className="absolute top-2 right-2 bg-black/50 p-1 rounded-full text-white hover:bg-red-500"
+                                className="absolute top-2 right-2 bg-black/50 p-1 rounded-full text-white"
                             >
                                 <X size={14} />
                             </button>
                             <button 
                                 onClick={handleTheaterSubmit}
-                                className="w-full mt-2 bg-amber-500 text-black font-bold py-3 rounded-xl hover:bg-amber-400 transition-colors"
+                                className="w-full mt-2 bg-amber-500 text-black font-bold py-3 rounded-xl transition-colors"
                             >
                                 Confirm Trip Nomination
                             </button>
@@ -929,7 +1021,7 @@ export default function NominateView() {
                 {!theaterSelectedMovie && (
                     <button 
                         onClick={() => setShowManualEntry(true)}
-                        className="w-full mt-4 py-3 text-sm text-amber-400 border border-dashed border-amber-500/30 rounded-xl hover:bg-amber-500/5 flex items-center justify-center gap-2"
+                        className="w-full mt-4 py-3 text-sm text-amber-400 border border-dashed border-amber-500/30 rounded-xl flex items-center justify-center gap-2"
                     >
                         <SquarePen size={16} />
                         Can't find it? Write in for Theater
@@ -982,7 +1074,7 @@ export default function NominateView() {
                   <div 
                     key={nom.nominationId} 
                     onClick={() => setSelectedMovie(nom)}
-                    className="flex items-center justify-between bg-[#050505] p-2 rounded-lg border border-[#2a2a2e] cursor-pointer hover:bg-slate-800 transition-colors"
+                    className="flex items-center justify-between bg-[#050505] p-2 rounded-lg border border-[#2a2a2e] cursor-pointer transition-colors"
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <span className="text-xs font-bold text-slate-600 w-4 shrink-0">{idx + 1}.</span>
@@ -997,7 +1089,7 @@ export default function NominateView() {
                     </div>
                     <button 
                       onClick={(e) => { e.stopPropagation(); toggleNomination(nom, nom.nominationType === 'theater'); }}
-                      className="text-slate-500 hover:text-rose-500 p-1 shrink-0"
+                      className="text-slate-500 p-1 shrink-0"
                     >
                       <X size={14} />
                     </button>
@@ -1007,7 +1099,7 @@ export default function NominateView() {
             )}
             <button 
               onClick={() => navigate(`/room/${code}`)}
-              className="w-full mt-4 bg-rose-500 text-white font-bold py-3 rounded-xl hover:bg-rose-600 transition-colors"
+              className="w-full mt-4 bg-rose-500 text-white font-bold py-3 rounded-xl transition-colors"
             >
               Done Nominating
             </button>
@@ -1114,8 +1206,6 @@ export default function NominateView() {
 }
 
 function ExpandedCard({ movie, isNominated, inWatchlist, onNominate, onWatchlist, onClose, isSelectionMode, isSelected }) {
-    const posterUrl = movie.poster_path ? `${POSTER_BASE_URL}${movie.poster_path}` : null
-    
     return (
         <div 
             className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md"
@@ -1127,13 +1217,13 @@ function ExpandedCard({ movie, isNominated, inWatchlist, onNominate, onWatchlist
             >
                 <div className="flex-1 overflow-y-auto p-6 pb-24">
                     <div className="flex gap-4 mb-4">
-                        <div className="w-28 shrink-0 aspect-[2/3] rounded-xl overflow-hidden bg-slate-800 shadow-lg">
-                            {posterUrl ? (
-                                <img src={posterUrl} alt={movie.title} className="w-full h-full object-cover" />
-                            ) : (
-                                <div className="w-full h-full flex items-center justify-center text-slate-600"><Film size={24} /></div>
-                            )}
-                        </div>
+                        <MoviePoster
+                            title={movie.title}
+                            posterPath={movie.poster_path}
+                            className="w-28 shrink-0 aspect-[2/3] rounded-xl shadow-lg"
+                            iconSize={24}
+                            showTitle
+                        />
                         <div>
                             <h2 className="text-2xl font-bold leading-tight mb-1">{movie.title}</h2>
                             <div className="text-sm text-slate-400 mb-2">{movie.year || 'N/A'}</div>
@@ -1159,7 +1249,7 @@ function ExpandedCard({ movie, isNominated, inWatchlist, onNominate, onWatchlist
                     <button onClick={onWatchlist} className={`w-14 h-14 rounded-full border-2 flex items-center justify-center shadow-lg transition-transform active:scale-95 ${inWatchlist ? 'bg-pink-500 border-pink-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400'}`}>
                         <Heart size={24} fill={inWatchlist ? "currentColor" : "none"} />
                     </button>
-                    <button onClick={onNominate} className={`h-14 px-8 rounded-full border-2 flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-95 font-bold ${isSelectionMode ? (isSelected ? 'bg-amber-500 border-amber-500 text-black' : 'bg-slate-900 border-slate-700 text-white hover:border-amber-500 hover:text-amber-500') : (isNominated ? 'bg-rose-500 border-rose-500 text-white' : 'bg-slate-900 border-slate-700 text-white')}`}>
+                    <button onClick={onNominate} className={`h-14 px-8 rounded-full border-2 flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-95 font-bold ${isSelectionMode ? (isSelected ? 'bg-amber-500 border-amber-500 text-black' : 'bg-slate-900 border-slate-700 text-white') : (isNominated ? 'bg-rose-500 border-rose-500 text-white' : 'bg-slate-900 border-slate-700 text-white')}`}>
                         {isSelectionMode ? (
                             isSelected ? <><Check size={24} /> Selected</> : <><Check size={24} /> Select</>
                         ) : (
@@ -1169,7 +1259,7 @@ function ExpandedCard({ movie, isNominated, inWatchlist, onNominate, onWatchlist
                 </div>
             </div>
             
-            <button className="absolute top-4 right-4 p-2 rounded-full bg-black/40 text-white/70 hover:text-white backdrop-blur-sm border border-white/10 z-20" onClick={onClose}>
+            <button className="absolute top-4 right-4 p-2 rounded-full bg-black/40 text-white/70 backdrop-blur-sm border border-white/10 z-20" onClick={onClose}>
                 <X size={20} />
             </button>
         </div>

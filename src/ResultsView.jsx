@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from './supabaseClient'
 import { X, Heart, ThumbsUp, ThumbsDown, Shuffle, PlayCircle, Minus } from 'lucide-react'
-import { POSTER_BASE_URL } from './tmdbClient'
+import MoviePoster from './MoviePoster'
 
 export default function ResultsView({ eventId, onClose, onSelected }) {
   const [movies, setMovies] = useState([])
@@ -250,7 +250,6 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
                   onClick={() => isReady && handleRandomPick()}
                   disabled={!isReady}
                   whileTap={{ scale: 0.98 }}
-                  whileHover={{ scale: 1.01 }}
                   className={`mt-4 w-full p-4 rounded-lg flex items-center justify-center gap-2.5 font-bold ${isReady ? 'bg-amber-400 text-black cursor-pointer' : 'bg-white/10 text-slate-400 cursor-not-allowed'}`}
                 >
                     <motion.span
@@ -375,7 +374,6 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
               {sortedList.map((movie, index) => {
                 const place = index + 1
                 const medal = place === 1 ? 'gold' : place === 2 ? '#c0c0c0' : place === 3 ? '#cd7f32' : null
-                const posterUrl = movie.poster_path ? `${POSTER_BASE_URL}${movie.poster_path}` : null
                 return (
                   <motion.div
                     key={movie.nomination_id}
@@ -386,7 +384,12 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
                   >
                       <div className="flex items-center gap-3 flex-1">
                         <span className="text-xl font-bold" style={{ color: medal || '#444' }}>#{place}</span>
-                        {posterUrl && <img src={posterUrl} alt={movie.title} className="w-10 h-14 object-cover rounded-md bg-slate-800" />}
+                        <MoviePoster
+                          title={movie.title}
+                          posterPath={movie.poster_path}
+                          className="w-10 h-14 shrink-0 rounded-md"
+                          iconSize={16}
+                        />
                         <div className="flex flex-col gap-2">
                           <div className="font-bold text-base">{movie.title}</div>
                           <div className="text-sm">Score: {movie.stats.score}</div>
@@ -435,11 +438,16 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
                 className="w-full max-w-lg h-[70vh] bg-slate-900 border-t border-white/10 rounded-t-3xl p-5 flex flex-col"
               >
                 {(() => {
-                  const posterUrl = activeMovie.poster_path ? `${POSTER_BASE_URL}${activeMovie.poster_path}` : null
                   return (
                 <div className="flex justify-between items-start gap-4 mb-4">
                   <div className="flex gap-4 items-start">
-                    {posterUrl && <img src={posterUrl} alt={activeMovie.title} className="w-20 rounded-lg" />}
+                    <MoviePoster
+                      title={activeMovie.title}
+                      posterPath={activeMovie.poster_path}
+                      className="w-20 shrink-0 aspect-[2/3] rounded-lg"
+                      iconSize={20}
+                      showTitle
+                    />
                     <div>
                     <h2 className="m-0 text-xl font-bold">{activeMovie.title}</h2>
                     <div className="text-sm mt-1 text-slate-400">{activeMovie.genre?.join(', ') || 'Genre N/A'}</div>
@@ -485,9 +493,11 @@ export default function ResultsView({ eventId, onClose, onSelected }) {
 }
 
 function Stat({ icon: Icon, val, color }) {
+    const shouldFill = Icon === Heart || Icon === ThumbsUp || Icon === ThumbsDown
+
     return (
         <div className="text-center">
-            <Icon size={16} style={{ color }} />
+            <Icon size={16} style={{ color }} fill={shouldFill ? 'currentColor' : 'none'} />
             <div className="text-sm font-bold" style={{ color }}>{val}</div>
         </div>
     )

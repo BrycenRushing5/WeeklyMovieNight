@@ -227,6 +227,7 @@ function VoteBtn({ active, type, onClick }) {
     const color = colors[type]
     const icons = { down: ThumbsDown, up: ThumbsUp, love: Heart }
     const Icon = icons[type]
+    const shouldFill = type === 'down' || type === 'up' || type === 'love'
 
     return (
         <button 
@@ -239,7 +240,7 @@ function VoteBtn({ active, type, onClick }) {
                 display: 'flex', justifyContent: 'center'
             }}
         >
-            <Icon size={20} fill={active && type === 'love' ? 'white' : 'none'} />
+            <Icon size={20} fill={shouldFill ? 'currentColor' : 'none'} />
         </button>
     )
 }

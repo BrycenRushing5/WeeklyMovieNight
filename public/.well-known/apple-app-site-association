@@ -1,0 +1,14 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appIDs": ["9LZ26C8VP3.com.brycenrushing.flickpickios"],
+        "components": [
+          { "/": "/room/*" },
+          { "/": "/join/*" }
+        ]
+      }
+    ]
+  }
+}

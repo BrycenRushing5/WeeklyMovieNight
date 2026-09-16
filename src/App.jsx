@@ -11,6 +11,8 @@ import NominateView from './NominateView'
 import VoteView from './VoteView'
 import RevealView from './RevealView'
 import LoadingSpinner from './LoadingSpinner'
+import AppLinkPrompt from './AppLinkPrompt'
+import RecoveryEmailPrompt from './RecoveryEmailPrompt'
 
 function App() {
   const [session, setSession] = useState(null)
@@ -58,11 +60,18 @@ function App() {
         }
       `}</style>
 
+      {/* Invite links: offer the iOS app before anything else, including
+          for signed-out visitors who land on /room or /join. */}
+      <AppLinkPrompt />
+
       {loading ? (
         <LoadingSpinner label="Loading..." />
       ) : !session ? (
         <Auth />
       ) : (
+        <>
+        {/* Legacy username-only accounts get nudged to add a recoverable email. */}
+        <RecoveryEmailPrompt session={session} />
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Dashboard session={session} />} />
@@ -78,6 +87,7 @@ function App() {
             <Route path="/profile" element={<ProfileView session={session} />} />
           </Routes>
         </BrowserRouter>
+        </>
       )}
     </div>
   )
